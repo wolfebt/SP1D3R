@@ -6,6 +6,11 @@
     <title>SP1D3R</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.53.0/min/vs/loader.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script>
+    <script src="https://unpkg.com/@isomorphic-git/lightning-fs"></script>
+    <script src="https://unpkg.com/isomorphic-git"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -47,12 +52,21 @@
             padding-left: 1.5rem;
             border-left: 1px solid #4a5568;
         }
-        .download-btn {
-            opacity: 0.3;
-            transition: all 0.2s;
+        .file-actions {
+            opacity: 0;
+            transition: opacity 0.2s;
         }
-        .file-tree-item:hover .download-btn {
+        .file-tree-item:hover .file-actions {
             opacity: 1;
+        }
+        .action-btn {
+            padding: 4px;
+            border-radius: 4px;
+            color: #8b949e;
+        }
+        .action-btn:hover {
+            background-color: #30363d;
+            color: #c9d1d9;
         }
         /* Pair Coder Styles */
         .code-font {
@@ -139,6 +153,42 @@
             scrollbar-width: thin;
             scrollbar-color: #4a5568 #161b22;
         }
+
+        /* Diff view styles */
+        .diff-added { background-color: #1a3c2a; }
+        .diff-removed { background-color: #4d1c1c; }
+        .diff-line { display: block; white-space: pre-wrap; }
+
+        /* Editor Tabs */
+        .editor-tab {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            background-color: #21262d;
+            border-right: 1px solid #0d1117;
+            cursor: pointer;
+            color: #8b949e;
+            font-size: 0.875rem;
+        }
+        .editor-tab.active {
+            background-color: #161b22;
+            color: #c9d1d9;
+        }
+        .editor-tab:hover:not(.active) {
+            background-color: #2d3748;
+        }
+        .tab-close-btn {
+            margin-left: 12px;
+            padding: 2px;
+            border-radius: 50%;
+            line-height: 0.8;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        .tab-close-btn:hover {
+            background-color: #484f58;
+            color: white;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-gray-300">
@@ -146,11 +196,43 @@
     <input type="file" id="file-input" webkitdirectory directory multiple class="hidden">
 
     <!-- Modals -->
+    <div id="refactor-review-modal" class="fixed inset-0 bg-black bg-opacity-75 z-[80] hidden items-center justify-center p-4">
+        <div class="modal-content p-0 rounded-lg w-full max-w-6xl max-h-[90vh] flex flex-col">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
+                <h3 class="text-xl font-bold text-white">Review Proposed Refactoring</h3>
+                <button id="close-refactor-modal-btn" class="text-gray-400 hover:text-white text-3xl font-bold">&times;</button>
+            </div>
+            <div class="flex-grow flex overflow-hidden">
+                <div id="refactor-file-list" class="w-1/4 bg-gray-900 overflow-y-auto border-r border-gray-700 p-2">
+                    <!-- File list will be populated here -->
+                </div>
+                <div class="w-3/4 flex flex-col">
+                    <div id="refactor-diff-view" class="flex-grow overflow-y-auto p-4 font-mono text-sm">
+                        <p class="text-gray-500">Select a file to see the changes.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-700 flex justify-end items-center space-x-4 flex-shrink-0">
+                <span id="refactor-summary" class="text-sm text-gray-400"></span>
+                <button id="cancel-refactor-btn" class="navigator-btn px-4 py-2 rounded-md">Cancel</button>
+                <button id="approve-refactor-btn" class="submit-btn px-4 py-2 rounded-md">Approve Changes</button>
+            </div>
+        </div>
+    </div>
+
     <div id="file-tree-modal" class="fixed inset-0 bg-black bg-opacity-75 z-50 hidden items-center justify-center p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col border border-gray-700">
             <div class="p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
                 <h3 id="file-tree-title" class="text-xl font-bold text-white">Project Files</h3>
-                <button id="close-modal-btn" class="text-gray-400 hover:text-white text-3xl font-bold">&times;</button>
+                <div class="flex items-center space-x-2">
+                    <button id="new-file-btn" title="New File" class="action-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg>
+                    </button>
+                    <button id="new-folder-btn" title="New Folder" class="action-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
+                    </button>
+                    <button id="close-modal-btn" class="text-gray-400 hover:text-white text-2xl font-bold">&times;</button>
+                </div>
             </div>
             <div id="file-tree-container" class="p-4 overflow-y-auto font-mono text-sm"></div>
         </div>
@@ -175,7 +257,9 @@
         <div class="modal-content p-8 rounded-lg w-full max-w-md">
             <h2 class="text-xl font-bold mb-4">Settings</h2>
             <label for="api-key-input" class="block mb-2 text-sm font-medium text-gray-400">Gemini API Key</label>
-            <input type="password" id="api-key-input" class="prompt-input w-full p-2 rounded-md mb-4">
+            <input type="password" id="api-key-input" class="prompt-input w-full p-2 rounded-md mb-2">
+            <label for="github-pat-input" class="block mb-2 text-sm font-medium text-gray-400">GitHub Personal Access Token</label>
+            <input type="password" id="github-pat-input" class="prompt-input w-full p-2 rounded-md mb-4">
             <div class="flex justify-end gap-4">
                 <button id="cancel-settings-btn" class="navigator-btn px-4 py-2 rounded-md">Cancel</button>
                 <button id="save-settings-btn" class="submit-btn px-4 py-2 rounded-md">Save</button>
@@ -218,10 +302,12 @@
                 <div class="flex items-center space-x-3">
                     <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
                     <h1 class="text-2xl font-bold text-gray-200">SP1D3R</h1>
+                    <button id="settings-btn" class="settings-btn p-2 rounded-full"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
                 </div>
                 <div class="flex items-center border-l border-gray-700 pl-6 space-x-2">
                     <button id="emulator-tab-btn" class="tab-btn active">Web Emulator</button>
                     <button id="coder-tab-btn" class="tab-btn">Pair Coder</button>
+                    <button id="source-control-tab-btn" class="tab-btn">Source Control</button>
                 </div>
             </div>
             <div id="emulator-controls" class="flex items-center space-x-4">
@@ -230,12 +316,13 @@
                     Select Project
                 </label>
                 <button id="view-files-btn" class="hidden bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg"><svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>View Files</button>
+                <button id="download-zip-btn" class="hidden bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg"><svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Download Project</button>
                 <button id="reset-btn" class="hidden bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg"><svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>New Project</button>
                 <div class="border-l h-8 border-gray-600"></div>
                 <button id="view-console-btn" title="View Console" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg ml-2"><svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM8 17H6V15H8V17ZM12 11H6V9H12V11Z"/></svg></button>
             </div>
             <div id="coder-controls" class="hidden items-center space-x-4">
-                 <button id="settings-btn" class="settings-btn p-2 rounded-full"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+                 
             </div>
         </header>
 
@@ -304,6 +391,7 @@
                             <p id="current-file-display" class="text-xs text-gray-500 code-font">No file selected.</p>
                         </div>
                         <div class="flex items-center gap-2 flex-wrap">
+                            <button id="generate-tests-btn" class="navigator-btn px-3 py-1 rounded-md text-sm" disabled>Generate Tests</button>
                             <button id="copy-code-btn" class="navigator-btn px-3 py-1 rounded-md text-sm">Copy</button>
                             <button id="select-file-btn" class="navigator-btn px-3 py-1 rounded-md text-sm" disabled>Select File</button>
                             <button id="save-file-btn" class="navigator-btn px-3 py-1 rounded-md text-sm" disabled>Save & Refresh</button>
@@ -311,7 +399,41 @@
                             <button id="redo-btn" class="navigator-btn px-3 py-1 rounded-md text-sm" disabled>Redo</button>
                         </div>
                     </div>
-                    <pre id="code-editor" class="code-font w-full p-4 text-sm flex-grow rounded-lg bg-gray-900 overflow-auto"><code>// Load a project, then select a file to begin coding.</code></pre>
+                    <div class="flex flex-col flex-grow overflow-hidden rounded-lg border border-[#30363d]">
+                        <div id="editor-tabs" class="flex items-center bg-gray-800 flex-shrink-0">
+                            <!-- Tabs will be dynamically added here -->
+                        </div>
+                        <div id="code-editor" class="code-font w-full text-sm flex-grow bg-gray-900 overflow-hidden"></div>
+                    </div>
+                </div>
+            </main>
+            
+            <main id="source-control-view" class="hidden h-full flex p-4 text-sm">
+                <div class="w-1/3 pr-4 border-r border-gray-700">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-lg font-semibold">Source Control</h3>
+                        <button id="git-refresh-btn" title="Refresh Status" class="action-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L20.5 10"/></svg>
+                        </button>
+                    </div>
+                    <button id="clone-repo-btn" class="submit-btn w-full px-4 py-2 rounded-md mb-4 text-sm">Clone Repository</button>
+                    
+                    <h4 class="font-semibold mt-4 mb-2">Changes</h4>
+                    <div id="git-status-list" class="flex flex-col gap-1">
+                        <p class="text-gray-500">No changes detected.</p>
+                    </div>
+                </div>
+                <div class="w-2/3 pl-4 flex flex-col">
+                     <h3 class="text-lg font-semibold mb-2">Commit</h3>
+                     <textarea id="commit-message-input" class="audit-input w-full p-2 text-sm rounded-lg mb-2 code-font" placeholder="Commit message" rows="4"></textarea>
+                     <div class="flex justify-end items-center gap-4">
+                        <button id="commit-btn" class="submit-btn px-4 py-2 rounded-md text-sm" disabled>Commit</button>
+                        <button id="push-btn" class="navigator-btn px-4 py-2 rounded-md text-sm" disabled>Push</button>
+                     </div>
+                     <h3 class="text-lg font-semibold mt-6 mb-2">History</h3>
+                     <div id="git-log-list" class="flex-grow overflow-y-auto code-font bg-gray-900 rounded-lg p-2">
+                         <p class="text-gray-500">No commits to show.</p>
+                     </div>
                 </div>
             </main>
         </div>
@@ -321,26 +443,47 @@
         // --- TABS ---
         const emulatorTabBtn = document.getElementById('emulator-tab-btn');
         const coderTabBtn = document.getElementById('coder-tab-btn');
+        const sourceControlTabBtn = document.getElementById('source-control-tab-btn');
         const emulatorView = document.getElementById('emulator-view');
         const coderView = document.getElementById('coder-view');
+        const sourceControlView = document.getElementById('source-control-view');
         const emulatorControls = document.getElementById('emulator-controls');
         const coderControls = document.getElementById('coder-controls');
 
         function switchToEmulator() {
-            emulatorTabBtn.classList.add('active'); coderTabBtn.classList.remove('active');
-            emulatorView.classList.remove('hidden'); coderView.classList.add('hidden');
+            emulatorTabBtn.classList.add('active'); 
+            coderTabBtn.classList.remove('active');
+            sourceControlTabBtn.classList.remove('active');
+            emulatorView.classList.remove('hidden'); 
+            coderView.classList.add('hidden');
+            sourceControlView.classList.add('hidden');
             emulatorControls.classList.remove('hidden'); emulatorControls.classList.add('flex');
             coderControls.classList.add('hidden');
         }
         function switchToCoder() {
-            coderTabBtn.classList.add('active'); emulatorTabBtn.classList.remove('active');
+            coderTabBtn.classList.add('active'); 
+            emulatorTabBtn.classList.remove('active');
+            sourceControlTabBtn.classList.remove('active');
             coderView.classList.remove('hidden'); coderView.classList.add('flex');
             emulatorView.classList.add('hidden');
+            sourceControlView.classList.add('hidden');
             coderControls.classList.remove('hidden'); coderControls.classList.add('flex');
             emulatorControls.classList.add('hidden'); emulatorControls.classList.remove('flex');
         }
+        function switchToSourceControl() {
+            sourceControlTabBtn.classList.add('active');
+            emulatorTabBtn.classList.remove('active'); 
+            coderTabBtn.classList.remove('active');
+            sourceControlView.classList.remove('hidden'); sourceControlView.classList.add('flex');
+            emulatorView.classList.add('hidden');
+            coderView.classList.add('hidden');
+            // Hide both sets of controls for this tab
+            emulatorControls.classList.add('hidden'); emulatorControls.classList.remove('flex');
+            coderControls.classList.add('hidden'); coderControls.classList.remove('flex');
+        }
         emulatorTabBtn.addEventListener('click', switchToEmulator);
         coderTabBtn.addEventListener('click', switchToCoder);
+        sourceControlTabBtn.addEventListener('click', switchToSourceControl);
 
         // --- DOM Elements ---
         const fileInput = document.getElementById('file-input');
@@ -366,6 +509,11 @@
         const transpiledCache = new Map();
         let currentProjectType = 'static';
         let currentCoderFile = null;
+        let currentOnFileClickCallback = null;
+        let openTabs = [];
+        let editorStates = new Map();
+        let fs = null;
+        let pfs = null;
 
         // --- PAIR CODER DOM Elements ---
         const coderSidebar = document.getElementById('coder-sidebar');
@@ -436,17 +584,31 @@
         
         const openFileTreeModal = (title, onFileClick) => {
             fileTreeTitle.textContent = title;
+            currentOnFileClickCallback = onFileClick; // Store the callback
             buildAndRenderFileTree(fileMap, onFileClick);
             openModal(fileTreeModal);
         };
         viewFilesBtn.addEventListener('click', () => openFileTreeModal('Project Files'));
         closeModalBtn.addEventListener('click', () => closeModal(fileTreeModal));
+        document.getElementById('new-file-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            newFile();
+        });
+        document.getElementById('new-folder-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            newFolder();
+        });
+
+        document.getElementById('download-zip-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            downloadProjectZip();
+        });
         
         resetBtn.addEventListener('click', () => { location.reload(); });
 
         // --- Core Emulation & Project Logic ---
         fileInput.addEventListener('change', handleFileSelect);
-
+        
         async function handleFileSelect(event) {
             if (event.target.files.length === 0) return;
             instructions.style.display = 'none';
@@ -463,10 +625,50 @@
                 fileMap.set(path, file);
             }
             log(`${fileMap.size} files loaded from '${rootDir}'.`, 'success');
+
+            log('Writing local files to virtual file system...');
+            const dir = '/project';
+            try {
+                try { await pfs.rm(dir, { recursive: true }); } catch (e) { /* ignore */ }
+                await pfs.mkdir(dir);
+
+                for (const [path, file] of fileMap.entries()) {
+                    const virtualPath = `${dir}/${path}`;
+                    const parentDir = virtualPath.substring(0, virtualPath.lastIndexOf('/'));
+                    if (parentDir && parentDir !== dir) {
+                        await pfs.mkdir(parentDir, { recursive: true });
+                    }
+                    await pfs.writeFile(virtualPath, new Uint8Array(await file.arrayBuffer()));
+                }
+                log('Virtual file system populated.', 'success');
+
+            } catch (e) {
+                log('Error writing to virtual file system', 'error', e);
+            }
+
+            try {
+                log('Initializing new Git repository...');
+                await git.init({ fs, dir: '/project' });
+                for (const [path, file] of fileMap.entries()) {
+                    await git.add({ fs, dir: '/project', filepath: path });
+                }
+                await git.commit({
+                    fs,
+                    dir: '/project',
+                    message: 'Initial commit',
+                    author: { name: 'SP1D3R User', email: 'user@sp1d3r.dev' }
+                });
+                log('Initial commit created.', 'success');
+                refreshGitStatus();
+                refreshGitLog();
+            } catch(e) {
+                 log('Error initializing git repository', 'error', e);
+            }
             
             selectProjectBtn.classList.add('hidden');
             viewFilesBtn.classList.remove('hidden');
             resetBtn.classList.remove('hidden');
+            document.getElementById('download-zip-btn').classList.remove('hidden');
             selectFileBtn.disabled = false;
             runAuditBtn.disabled = false;
             openAuditModalBtn.disabled = false;
@@ -622,6 +824,192 @@
             showStatusMessage(`Downloading '${file.name}'...`, 2000);
         }
 
+        function clearEditor() {
+            currentCoderFile = null;
+            openTabs = [];
+            editorStates.clear();
+            if (monacoEditor) {
+                monacoEditor.setValue('// No file open');
+            }
+            currentFileDisplay.textContent = 'No file selected.';
+            functionList.innerHTML = '<p class="text-xs text-gray-500">Select a file to see its functions.</p>';
+            saveFileBtn.disabled = true;
+            undoBtn.disabled = true;
+            redoBtn.disabled = true;
+            openAuditModalBtn.disabled = true;
+            document.getElementById('generate-tests-btn').disabled = true;
+            auditButtons.forEach(btn => btn.disabled = true);
+            renderTabs();
+        }
+
+        function closeTab(filePathToClose) {
+            const index = openTabs.indexOf(filePathToClose);
+            if (index === -1) return;
+
+            openTabs.splice(index, 1);
+            editorStates.delete(filePathToClose);
+
+            if (currentCoderFile === filePathToClose) {
+                if (openTabs.length > 0) {
+                    const newIndex = Math.max(0, index - 1);
+                    switchToTab(openTabs[newIndex]);
+                } else {
+                    clearEditor();
+                }
+            } else {
+                renderTabs();
+            }
+        }
+
+        function deleteItem(path, isFolder) {
+            const itemType = isFolder ? 'folder' : 'file';
+            const shortPath = path.split('/').pop();
+            const confirmation = confirm(`Are you sure you want to delete the ${itemType} "${shortPath}"?\n\nThis cannot be undone.`);
+            
+            if (!confirmation) return;
+
+            if (isFolder) {
+                const keysToDelete = Array.from(fileMap.keys()).filter(key => key.startsWith(path + '/'));
+                if (fileMap.has(path)) keysToDelete.push(path);
+
+                keysToDelete.forEach(key => {
+                    if (currentCoderFile === key) clearEditorState();
+                    fileMap.delete(key);
+                });
+            } else {
+                if (currentCoderFile === path) clearEditorState();
+                fileMap.delete(path);
+            }
+
+            log(`Deleted ${itemType}: ${path}`, 'warn');
+            showStatusMessage(`Deleted '${shortPath}'`);
+            
+            buildAndRenderFileTree(fileMap, currentOnFileClickCallback);
+        }
+
+        function renameItem(path, isFolder) {
+            const itemType = isFolder ? 'folder' : 'file';
+            const oldName = path.split('/').pop();
+            const newName = prompt(`Enter the new name for the ${itemType} "${oldName}":`, oldName);
+
+            if (!newName || newName.trim() === '' || newName === oldName) {
+                return;
+            }
+
+            if (newName.includes('/')) {
+                alert('Error: New name cannot contain a forward slash (/).');
+                return;
+            }
+            
+            const parentPath = path.substring(0, path.lastIndexOf('/'));
+            const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+
+            if (Array.from(fileMap.keys()).some(key => key === newPath || key.startsWith(newPath + '/'))) {
+                alert(`Error: A file or folder named "${newName}" already exists in this location.`);
+                return;
+            }
+
+            if (isFolder) {
+                const filesToMove = Array.from(fileMap.entries()).filter(([key]) => key.startsWith(path + '/'));
+                if(fileMap.has(path)) filesToMove.push([path, fileMap.get(path)]);
+
+                filesToMove.forEach(([oldKey, file]) => {
+                    const newKey = oldKey.replace(path, newPath);
+                    fileMap.set(newKey, file);
+                    fileMap.delete(oldKey);
+                    if (currentCoderFile === oldKey) {
+                        currentCoderFile = newKey;
+                        currentFileDisplay.textContent = `Editing: ${newKey}`;
+                    }
+                });
+            } else {
+                const file = fileMap.get(path);
+                fileMap.set(newPath, file);
+                fileMap.delete(path);
+                if (currentCoderFile === path) {
+                    currentCoderFile = newPath;
+                    currentFileDisplay.textContent = `Editing: ${newPath}`;
+                }
+            }
+
+            log(`Renamed ${itemType}: ${path} to ${newPath}`, 'info');
+            showStatusMessage(`Renamed to '${newName}'`);
+
+            buildAndRenderFileTree(fileMap, currentOnFileClickCallback);
+        }
+
+        function newFile() {
+            const path = prompt("Enter the full path for the new file (e.g., 'src/components/Button.js'):", "new-file.js");
+            if (!path || path.trim() === '') return;
+
+            if (fileMap.has(path) || Array.from(fileMap.keys()).some(key => key.startsWith(path + '/'))) {
+                alert(`Error: A file or folder at "${path}" already exists.`);
+                return;
+            }
+
+            const newFile = new File([""], path.split('/').pop(), { type: "text/plain" });
+            fileMap.set(path, newFile);
+
+            log(`Created new file: ${path}`, 'info');
+            showStatusMessage(`Created file '${path}'`);
+            buildAndRenderFileTree(fileMap, currentOnFileClickCallback);
+        }
+
+        function newFolder() {
+            const path = prompt("Enter the full path for the new folder (e.g., 'src/assets'):", "new-folder");
+            if (!path || path.trim() === '') return;
+            
+            const placeholderPath = path.endsWith('/') ? `${path}.keep` : `${path}/.keep`;
+
+            if (fileMap.has(path) || fileMap.has(placeholderPath) || Array.from(fileMap.keys()).some(key => key.startsWith(path + '/'))) {
+                alert(`Error: A folder at "${path}" already exists.`);
+                return;
+            }
+
+            const newFile = new File([""], ".keep", { type: "text/plain" });
+            fileMap.set(placeholderPath, newFile);
+
+            log(`Created new folder: ${path}`, 'info');
+            showStatusMessage(`Created folder '${path}'`);
+            buildAndRenderFileTree(fileMap, currentOnFileClickCallback);
+        }
+
+        async function downloadProjectZip() {
+            if (fileMap.size === 0) {
+                showStatusMessage('No project loaded to download.');
+                return;
+            }
+            
+            showStatusMessage('Zipping project files...', 5000);
+            log('Starting project zip export...');
+
+            const zip = new JSZip();
+            for (const [path, file] of fileMap.entries()) {
+                // Don't include placeholder files in the download
+                if (file.name === '.keep') continue;
+                zip.file(path, file);
+            }
+
+            try {
+                const content = await zip.generateAsync({type:"blob"});
+                const rootDir = fileInput.files[0]?.webkitRelativePath.split('/')[0] || 'project';
+                
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(content);
+                link.download = `${rootDir}.zip`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(link.href);
+                
+                log('Project downloaded as zip.', 'success');
+                showStatusMessage('Download complete!');
+            } catch (err) {
+                log(`Error creating zip file: ${err.message}`, 'error', err);
+                showStatusMessage('Failed to create zip file.');
+            }
+        }
+
         function buildAndRenderFileTree(files, onFileClick) {
             const tree = {};
             for (const path of files.keys()) {
@@ -639,29 +1027,65 @@
             Object.keys(node).sort().forEach(key => {
                 const isFolder = Object.keys(node[key]).length > 0;
                 const currentPath = basePath ? `${basePath}/${key}` : key;
+                
                 const itemEl = document.createElement('div');
                 itemEl.className = 'file-tree-item';
                 
-                const itemContent = document.createElement('span');
-                itemContent.className = 'flex-grow';
-                itemContent.textContent = `${isFolder ? '📁' : '📄'} ${key}`;
+                const itemIcon = document.createElement('span');
+                itemIcon.className = 'mr-2';
+                itemIcon.textContent = isFolder ? '📁' : '📄';
+
+                const itemName = document.createElement('span');
+                itemName.className = 'flex-grow truncate';
+                itemName.textContent = key;
+                itemName.title = key;
+
+                const itemContent = document.createElement('div');
+                itemContent.className = 'flex-grow flex items-center cursor-pointer';
+                itemContent.appendChild(itemIcon);
+                itemContent.appendChild(itemName);
+
+                if (isFolder) {
+                    itemContent.addEventListener('click', (e) => { 
+                        e.stopPropagation(); 
+                        // The childrenContainer is the next sibling of itemEl
+                        if (itemEl.nextElementSibling) {
+                            itemEl.nextElementSibling.classList.toggle('hidden');
+                        }
+                    });
+                } else if (onFileClick) {
+                    itemContent.addEventListener('click', (e) => { e.stopPropagation(); onFileClick(currentPath); });
+                }
+
                 itemEl.appendChild(itemContent);
+                
+                const actionsContainer = document.createElement('div');
+                actionsContainer.className = 'file-actions flex items-center space-x-1 flex-shrink-0';
+
+                const renameBtn = document.createElement('button');
+                renameBtn.className = 'action-btn';
+                renameBtn.title = `Rename ${key}`;
+                renameBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
+                renameBtn.addEventListener('click', (e) => { e.stopPropagation(); renameItem(currentPath, isFolder); });
+                actionsContainer.appendChild(renameBtn);
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'action-btn';
+                deleteBtn.title = `Delete ${key}`;
+                deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`;
+                deleteBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteItem(currentPath, isFolder); });
+                actionsContainer.appendChild(deleteBtn);
 
                 if (!isFolder) {
-                    if (onFileClick) {
-                        itemEl.addEventListener('click', (e) => { e.stopPropagation(); onFileClick(currentPath); });
-                    }
                     const downloadBtn = document.createElement('button');
-                    downloadBtn.className = 'download-btn text-gray-400 hover:text-white flex-shrink-0';
+                    downloadBtn.className = 'action-btn';
                     downloadBtn.title = `Download ${key}`;
-                    downloadBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
-                    downloadBtn.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        downloadFile(currentPath);
-                    });
-                    itemEl.appendChild(downloadBtn);
+                    downloadBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
+                    downloadBtn.addEventListener('click', (e) => { e.stopPropagation(); downloadFile(currentPath); });
+                    actionsContainer.appendChild(downloadBtn);
                 }
-                
+
+                itemEl.appendChild(actionsContainer);
                 container.appendChild(itemEl);
 
                 if (isFolder) {
@@ -669,34 +1093,27 @@
                     childrenContainer.className = 'file-tree-children hidden';
                     renderTree(node[key], childrenContainer, currentPath, onFileClick);
                     container.appendChild(childrenContainer);
-
-                    // Re-instated more robust click handling for folders
-                    itemEl.addEventListener('click', (e) => { 
-                        e.stopPropagation(); 
-                        childrenContainer.classList.toggle('hidden');
-                    });
                 }
             });
         }
         
         // --- PAIR CODER SCRIPT ---
+        let monacoEditor = null;
+
         const setupPairCoder = () => {
             const chatHistoryContainer = document.getElementById('chat-history');
             const chatForm = document.getElementById('chat-form');
             const chatInput = document.getElementById('chat-input');
-            const codeEditor = document.getElementById('code-editor');
+            const codeEditorContainer = document.getElementById('code-editor');
             const undoBtn = document.getElementById('undo-btn');
             const redoBtn = document.getElementById('redo-btn');
             const copyCodeBtn = document.getElementById('copy-code-btn');
             
-            let codeHistory = [codeEditor.querySelector('code').textContent];
-            let historyIndex = 0;
             let chatHistory = [];
 
             const autoResizeChatInput = () => {
                 chatInput.style.height = 'auto';
                 const scrollHeight = chatInput.scrollHeight;
-                // Limit height to a max of around 6 lines
                 const maxHeight = 24 * 6;
                 chatInput.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
             };
@@ -709,16 +1126,6 @@
                 }
             });
 
-            const updateCodeEditor = (newCode, addToHistory = true) => {
-                codeEditor.querySelector('code').textContent = newCode;
-                if (addToHistory) {
-                    if (historyIndex < codeHistory.length - 1) codeHistory.splice(historyIndex + 1);
-                    codeHistory.push(newCode);
-                    historyIndex++;
-                    updateUndoRedoState();
-                }
-            };
-            
             const addMessageToChat = (text, sender, addToApiHistory = true) => {
                 const messageEl = document.createElement('div');
                 messageEl.className = `chat-message ${sender} p-3 rounded-lg max-w-xl text-sm`;
@@ -735,9 +1142,17 @@
                 const userInput = chatInput.value.trim();
                 if (!userInput) return;
 
-                if (!currentCoderFile) { 
+                const projectKeywords = ['project', 'architecture', 'entire', 'whole', 'overall', 'full project', 'complete app'];
+                const refactorKeywords = ['refactor', 'rename all', 'update all', 'apply to all', 'across the project'];
+
+                const isRefactorQuery = fileMap.size > 0 && refactorKeywords.some(keyword => userInput.toLowerCase().includes(keyword));
+                const isProjectQuery = fileMap.size > 0 && !isRefactorQuery && projectKeywords.some(keyword => userInput.toLowerCase().includes(keyword));
+
+                if (!currentCoderFile && !isProjectQuery && !isRefactorQuery) { 
                     showStatusMessage('Please select a file before making a code request.');
+                    return;
                 }
+
                 addMessageToChat(userInput, 'user');
                 chatInput.value = '';
                 autoResizeChatInput();
@@ -749,20 +1164,54 @@
                 chatHistoryContainer.scrollTop = chatHistoryContainer.scrollHeight;
                 
                 try {
-                    const currentCode = await fileMap.get(currentCoderFile)?.text() || '';
-                    const systemPrompt = `You are SP1D3R, an expert AI pair programmer with two primary capabilities:
-                        1. CODE MODIFICATION: If the user provides an instruction to create, modify, or refactor code for the currently selected file ('${currentCoderFile || 'none'}'), your ENTIRE response MUST be ONLY the complete, updated, raw source code for that file. Do not include explanations or markdown.
-                        2. CONVERSATIONAL Q&A: If the user asks a question, requests information, or has a general conversation, you must respond as a helpful AI assistant. For up-to-date or specific programming information, you MUST use the provided Google Search tool. Your answer should be in a clear, conversational format.
-                        Current Code Context:\n\`\`\`\n${currentCode}\n\`\`\``;
+                    let systemPrompt;
+                    let fullContext = '';
+
+                    if (isRefactorQuery || isProjectQuery) {
+                        showStatusMessage('Analyzing project...');
+                        const fileContents = [];
+                        for (const [path, file] of fileMap.entries()) {
+                            if (file.name === '.keep') continue;
+                            const content = await file.text();
+                            fileContents.push(`--- FILE: ${path} ---\n\n${content}`);
+                        }
+                        fullContext = fileContents.join('\n\n');
+                    }
+
+                    if (isRefactorQuery) {
+                        systemPrompt = `You are an expert AI programmer performing a project-wide refactor. Analyze the user's request and the provided source code. Your task is to determine which files need to be changed and generate the complete, new content for each of those files.
+Your response MUST be ONLY a valid JSON array of objects. Each object must have two keys: "filePath" (a string) and "newContent" (a string with the full new file content).
+Do NOT include any other text, explanations, or markdown.
+Example format: [{"filePath": "src/App.js", "newContent": "..."}]
+Full Project Source Code:\n${fullContext}`;
+                    } else if (isProjectQuery) {
+                        systemPrompt = `You are SP1D3R, an expert software architect. The user wants to discuss the entire project. Analyze the provided source code from all project files to answer their question. Do not suggest code modifications unless explicitly asked.\n\nFull Project Source Code:\n${fullContext}`;
+                    } else {
+                        const currentCode = monacoEditor ? monacoEditor.getValue() : '';
+                        systemPrompt = `You are SP1D3R, an expert AI pair programmer with two primary capabilities:
+                            1. CODE MODIFICATION: If the user provides an instruction to create, modify, or refactor code for the currently selected file ('${currentCoderFile || 'none'}'), your ENTIRE response MUST be ONLY the complete, updated, raw source code for that file. Do not include explanations or markdown.
+                            2. CONVERSATIONAL Q&A: If the user asks a question, requests information, or has a general conversation, you must respond as a helpful AI assistant. For up-to-date or specific programming information, you MUST use the provided Google Search tool. Your answer should be in a clear, conversational format.
+                            Current Code Context:\n\`\`\`\n${currentCode}\n\`\`\``;
+                    }
 
                     const aiResponse = await callGeminiAPI(systemPrompt, chatHistory, true);
                     
-                    const codeBlockRegex = /^(<!DOCTYPE html>|import |const |let |var |function |class |\/\*|@|public |private |if \()/im;
-                    if (codeBlockRegex.test(aiResponse)) {
-                        updateCodeEditor(aiResponse);
-                        addMessageToChat("I've updated the code in the Main Canvas based on your request.", 'ai', false);
-                    } else {
-                        addMessageToChat(aiResponse, 'ai');
+                    try {
+                        const parsedResponse = JSON.parse(aiResponse);
+                        if (Array.isArray(parsedResponse) && parsedResponse.every(item => item.filePath && item.newContent)) {
+                            showRefactorReview(parsedResponse);
+                        } else {
+                           throw new Error("Invalid JSON format for refactoring.");
+                        }
+                    } catch (e) {
+                        // Not a JSON response, treat as normal chat or code update
+                        const codeBlockRegex = /^(<!DOCTYPE html>|import |const |let |var |function |class |\/\*|@|public |private |if \()/im;
+                        if (codeBlockRegex.test(aiResponse) && !isProjectQuery && !isRefactorQuery) {
+                            if (monacoEditor) monacoEditor.setValue(aiResponse);
+                            addMessageToChat("I've updated the code in the Main Canvas based on your request.", 'ai', false);
+                        } else {
+                            addMessageToChat(aiResponse, 'ai');
+                        }
                     }
                 } catch (error) {
                     addMessageToChat(`Error: ${error.message}`, 'ai', false);
@@ -770,9 +1219,9 @@
                     chatHistoryContainer.removeChild(thinkingEl);
                 }
             };
-            chatForm.addEventListener('submit', handleChatSubmit);
             
-            const handleCopyClick = (textToCopy, buttonElement) => {
+            const handleCopyClick = (buttonElement) => {
+                const textToCopy = monacoEditor ? monacoEditor.getValue() : '';
                 if (!textToCopy || textToCopy.trim() === '') { showStatusMessage('Nothing to copy.'); return; }
                 navigator.clipboard.writeText(textToCopy).then(() => {
                     const originalText = buttonElement.textContent;
@@ -780,109 +1229,539 @@
                     setTimeout(() => { buttonElement.textContent = originalText; }, 2000);
                 }).catch(err => { showStatusMessage('Failed to copy.'); });
             };
-            copyCodeBtn.addEventListener('click', () => handleCopyClick(codeEditor.querySelector('code').textContent, copyCodeBtn));
+            
+            const getLanguageForFile = (filename) => {
+                const extension = "." + filename.split('.').pop();
+                if (!monaco.languages.getLanguages) return 'plaintext';
+                const languages = monaco.languages.getLanguages();
+                const lang = languages.find(l => l.extensions && l.extensions.includes(extension));
+                return lang ? lang.id : 'plaintext';
+            };
 
-            const updateUndoRedoState = () => { undoBtn.disabled = historyIndex <= 0; redoBtn.disabled = historyIndex >= codeHistory.length - 1; };
-            undoBtn.addEventListener('click', () => { if (historyIndex > 0) { historyIndex--; updateCodeEditor(codeHistory[historyIndex], false); updateUndoRedoState(); } });
-            redoBtn.addEventListener('click', () => { if (historyIndex < codeHistory.length - 1) { historyIndex++; updateCodeEditor(codeHistory[historyIndex], false); updateUndoRedoState(); } });
+            // --- MONACO INITIALIZATION ---
+            require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.53.0/min/vs' }});
+            window.MonacoEnvironment = { getWorkerUrl: () => `data:text/javascript;charset=utf-8,${encodeURIComponent(`
+                self.MonacoEnvironment = { baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.53.0/min/' };
+                importScripts('https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.53.0/min/vs/base/worker/workerMain.js');`
+            )}` };
 
-            selectFileBtn.addEventListener('click', () => {
-                openFileTreeModal('Select a File to Edit', (filePath) => {
-                    const file = fileMap.get(filePath);
-                    if (file) {
-                        file.text().then(content => {
-                            currentCoderFile = filePath;
-                            updateCodeEditor(content);
-                            parseAndDisplayFunctions(content, filePath.split('.').pop());
-                            historyIndex = codeHistory.length - 1;
-                            chatHistory = []; // Reset chat history for new file
-                            currentFileDisplay.textContent = `Editing: ${filePath}`;
-                            saveFileBtn.disabled = false;
-                            auditButtons.forEach(btn => btn.disabled = false);
-                            closeModal(fileTreeModal);
-                        });
+            require(['vs/editor/editor.main'], function() {
+                monacoEditor = monaco.editor.create(codeEditorContainer, {
+                    value: '// Load a project, then select a file to begin coding.',
+                    language: 'javascript',
+                    theme: 'vs-dark',
+                    automaticLayout: true,
+                    fontFamily: "'Source Code Pro', monospace",
+                    backgroundColor: '#161b22',
+                    scrollBeyondLastLine: false,
+                    minimap: { enabled: false }
+                });
+
+                // --- Re-bind event listeners that depend on the editor ---
+                chatForm.addEventListener('submit', handleChatSubmit);
+                copyCodeBtn.addEventListener('click', () => handleCopyClick(copyCodeBtn));
+                
+                undoBtn.addEventListener('click', () => { if(monacoEditor) monacoEditor.trigger('source', 'undo'); });
+                redoBtn.addEventListener('click', () => { if(monacoEditor) monacoEditor.trigger('source', 'redo'); });
+
+                selectFileBtn.addEventListener('click', () => {
+                    openFileTreeModal('Select a File to Edit', (filePath) => {
+                        openFileInTab(filePath);
+                        closeModal(fileTreeModal);
+                    });
+                });
+
+                saveFileBtn.addEventListener('click', async () => {
+                    if (currentCoderFile && monacoEditor) {
+                        const newContent = monacoEditor.getValue();
+                        const originalFile = fileMap.get(currentCoderFile);
+                        fileMap.set(currentCoderFile, new File([newContent], originalFile.name, { type: originalFile.type }));
+                        showStatusMessage(`'${currentCoderFile}' saved.`);
+                        await refreshEmulator();
+                        refreshGitStatus();
                     }
                 });
             });
+        };
 
-            saveFileBtn.addEventListener('click', async () => {
-                if (currentCoderFile) {
-                    const newContent = codeEditor.querySelector('code').textContent;
-                    const originalFile = fileMap.get(currentCoderFile);
-                    fileMap.set(currentCoderFile, new File([newContent], originalFile.name, { type: originalFile.type }));
-                    showStatusMessage(`'${currentCoderFile}' saved. Refreshing...`);
-                    await refreshEmulator();
-                }
+        // --- Refactor Review Modal Logic ---
+        const refactorReviewModal = document.getElementById('refactor-review-modal');
+        const closeRefactorModalBtn = document.getElementById('close-refactor-modal-btn');
+        const refactorFileList = document.getElementById('refactor-file-list');
+        const refactorDiffView = document.getElementById('refactor-diff-view');
+        const refactorSummary = document.getElementById('refactor-summary');
+        const cancelRefactorBtn = document.getElementById('cancel-refactor-btn');
+        const approveRefactorBtn = document.getElementById('approve-refactor-btn');
+        
+        let currentChanges = [];
+
+        async function showRefactorReview(changes) {
+            currentChanges = changes;
+            refactorFileList.innerHTML = '';
+            refactorDiffView.innerHTML = '<p class="text-gray-500">Select a file to see the changes.</p>';
+            refactorSummary.textContent = `${changes.length} file(s) will be changed.`;
+
+            changes.forEach((change, index) => {
+                const fileItem = document.createElement('div');
+                fileItem.className = 'p-2 rounded-md cursor-pointer hover:bg-gray-700 text-sm truncate';
+                fileItem.textContent = change.filePath;
+                fileItem.title = change.filePath;
+                fileItem.onclick = async () => {
+                    Array.from(refactorFileList.children).forEach(child => child.classList.remove('bg-blue-600'));
+                    fileItem.classList.add('bg-blue-600');
+                    
+                    const originalFile = fileMap.get(change.filePath);
+                    const originalContent = originalFile ? await originalFile.text() : '';
+                    const diff = Diff.diffLines(originalContent, change.newContent);
+                    
+                    const fragment = document.createDocumentFragment();
+                    diff.forEach((part) => {
+                        const span = document.createElement('span');
+                        const className = part.added ? 'diff-added' : part.removed ? 'diff-removed' : '';
+                        span.className = `diff-line ${className}`;
+                        span.appendChild(document.createTextNode(part.value));
+                        fragment.appendChild(span);
+                    });
+                    
+                    refactorDiffView.innerHTML = '';
+                    refactorDiffView.appendChild(fragment);
+                };
+                refactorFileList.appendChild(fileItem);
             });
+
+            // Automatically click the first file
+            if (refactorFileList.firstChild) {
+                refactorFileList.firstChild.click();
+            }
+
+            openModal(refactorReviewModal);
+        }
+
+        closeRefactorModalBtn.addEventListener('click', () => closeModal(refactorReviewModal));
+        cancelRefactorBtn.addEventListener('click', () => {
+            closeModal(refactorReviewModal);
+            currentChanges = [];
+        });
+
+        approveRefactorBtn.addEventListener('click', async () => {
+            if (currentChanges.length === 0) return;
+
+            log(`Applying ${currentChanges.length} refactoring changes...`, 'info');
+
+            for (const change of currentChanges) {
+                const originalFile = fileMap.get(change.filePath);
+                const newFile = new File([change.newContent], originalFile ? originalFile.name : change.filePath.split('/').pop(), { type: originalFile?.type || 'text/plain' });
+                fileMap.set(change.filePath, newFile);
+
+                if (currentCoderFile === change.filePath && monacoEditor) {
+                    monacoEditor.setValue(change.newContent);
+                }
+            }
             
-            // --- Audit & Analysis Logic ---
-            const analysisModalContent = document.getElementById('analysis-modal-content');
-            const closeAnalysisModalBtn = document.getElementById('close-analysis-modal-btn');
+            showStatusMessage('Refactoring complete! Refreshing emulator...');
+            await refreshEmulator();
+
+            closeModal(refactorReviewModal);
+            currentChanges = [];
+        });
+
+        // --- Unit Test Generation Logic ---
+        const generateTestsBtn = document.getElementById('generate-tests-btn');
+
+        async function generateUnitTests() {
+            if (!currentCoderFile || !monacoEditor) {
+                showStatusMessage('Please open a file to generate tests for.', 3000);
+                return;
+            }
+
+            const filePath = currentCoderFile;
+            const fileContent = monacoEditor.getValue();
             
-            openAuditModalBtn.addEventListener('click', () => openModal(auditModal));
-            closeAuditModalBtn.addEventListener('click', () => closeModal(auditModal));
-            
-            const simpleMarkdownToHtml = (text) => text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/^- (.*$)/gm, '<ul><li>$1</li></ul>').replace(/<\/ul>\n<ul>/g, '').replace(/^(#+) (.*$)/gm, (m, h, c) => `<h${h.length+2}>${c}</h${h.length+2}>`).replace(/\n/g, '<br>');
-            
-            const showAnalysis = (content) => {
-                analysisModalContent.innerHTML = simpleMarkdownToHtml(content);
-                openModal(analysisModal);
-            };
-            
-            runAuditBtn.addEventListener('click', async () => {
-                const userPrompt = analysisPromptInput.value.trim();
-                if (fileMap.size === 0) { showStatusMessage('Please load a project first.'); return; }
-                if (!userPrompt) { showStatusMessage('Please describe what to audit.'); return; }
+            showStatusMessage('Generating unit tests with AI...', 5000);
+            log(`Generating tests for ${filePath}...`);
+
+            const systemPrompt = `You are a software testing expert specializing in JavaScript. Your task is to write a complete unit test file for the provided source code using the Jest testing framework.
+- Use the modern \`expect\` syntax (e.g., \`expect(result).toBe(true);\`).
+- Mock any imported dependencies where necessary.
+- Generate comprehensive test cases that cover the main functionality, edge cases, and potential error conditions.
+- The response should be ONLY the raw JavaScript code for the test file. Do not include any explanations, markdown formatting, or any text other than the code itself.
+
+File to be tested: ${filePath}
+---
+Source Code:
+\`\`\`javascript
+${fileContent}
+\`\`\`
+`;
+            try {
+                const testCode = await callGeminiAPI(systemPrompt, [], false);
                 
-                closeModal(auditModal);
-                analysisModalContent.innerHTML = `<div class="flex flex-col items-center justify-center h-full"><div class="spinner"></div><p class="mt-4">Running custom audit...</p></div>`;
-                openModal(analysisModal);
+                const originalPath = filePath;
+                const extensionIndex = originalPath.lastIndexOf('.');
+                const basePath = extensionIndex === -1 ? originalPath : originalPath.substring(0, extensionIndex);
+                const extension = extensionIndex === -1 ? '' : originalPath.substring(extensionIndex);
+                const testFilePath = `${basePath}.test${extension}`;
+
+                const testFile = new File([testCode], testFilePath.split('/').pop(), { type: 'text/javascript' });
+                fileMap.set(testFilePath, testFile);
+
+                log(`Created new test file: ${testFilePath}`, 'success');
+                showStatusMessage('Test file created! Opening in new tab...', 4000);
+
+                openFileInTab(testFilePath);
+
+            } catch (error) {
+                addMessageToChat(`Error generating tests: ${error.message}`, 'ai', false);
+                log(`Error generating tests for ${filePath}`, 'error', error);
+            }
+        }
+        
+        generateTestsBtn.addEventListener('click', generateUnitTests);
+
+        // --- Editor Tab Logic ---
+        function renderTabs() {
+            const tabsContainer = document.getElementById('editor-tabs');
+            tabsContainer.innerHTML = '';
+            
+            openTabs.forEach(filePath => {
+                const tabEl = document.createElement('div');
+                tabEl.className = 'editor-tab';
+                if (filePath === currentCoderFile) {
+                    tabEl.classList.add('active');
+                }
+                tabEl.textContent = filePath.split('/').pop();
+                tabEl.title = filePath;
                 
-                try {
-                    let systemPrompt, content, historyForApi = [];
-                    if (currentCoderFile) {
-                         content = await fileMap.get(currentCoderFile)?.text() || '';
-                         systemPrompt = `You are an expert code reviewer. Analyze the following code from '${currentCoderFile}' for the following user request: "${userPrompt}". Provide a concise report in Markdown format.`;
-                    } else {
-                        content = '';
-                        for (const [path, file] of fileMap.entries()) content += `--- FILE: ${path} ---\n\n${await file.text()}\n\n`;
-                        systemPrompt = `You are a Principal Software Architect. Conduct a comprehensive review of the provided project source code. The user's specific analysis request is: "${userPrompt}". Evaluate based on: Architectural Soundness, Code Quality, Functionality, and Usability/UX. Provide a detailed analysis in Markdown format.`;
+                const closeBtn = document.createElement('span');
+                closeBtn.className = 'tab-close-btn';
+                closeBtn.innerHTML = '&times;';
+                closeBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    closeTab(filePath);
+                };
+                
+                tabEl.appendChild(closeBtn);
+                tabEl.onclick = () => {
+                    switchToTab(filePath);
+                };
+                
+                tabsContainer.appendChild(tabEl);
+            });
+        }
+
+        function switchToTab(filePath) {
+            if (!monacoEditor || currentCoderFile === filePath) return;
+
+            // Save view state of the outgoing file
+            if (currentCoderFile && monacoEditor.getModel()) {
+                editorStates.set(currentCoderFile, monacoEditor.saveViewState());
+            }
+
+            const file = fileMap.get(filePath);
+            if (file) {
+                file.text().then(content => {
+                    currentCoderFile = filePath;
+                    
+                    // Create a new model to have a separate undo/redo stack
+                    const newModel = monaco.editor.createModel(content, getLanguageForFile(filePath));
+                    monacoEditor.setModel(newModel);
+
+                    // Restore the view state for the incoming file
+                    const savedState = editorStates.get(filePath);
+                    if (savedState) {
+                        monacoEditor.restoreViewState(savedState);
                     }
-                    historyForApi.push({role: 'user', parts: [{text: content}]})
-                    const report = await callGeminiAPI(systemPrompt, historyForApi, false);
-                    showAnalysis(report);
-                } catch (error) {
-                    showAnalysis(`<h3>Error during audit</h3><p>${error.message}</p>`);
-                }
+                    monacoEditor.focus();
+
+                    // Update the rest of the UI
+                    parseAndDisplayFunctions(content, filePath.split('.').pop());
+                    chatHistory = [];
+                    currentFileDisplay.textContent = `Editing: ${filePath}`;
+                    saveFileBtn.disabled = false;
+                    auditButtons.forEach(btn => btn.disabled = false);
+                    document.getElementById('generate-tests-btn').disabled = false;
+                    undoBtn.disabled = false;
+                    redoBtn.disabled = false;
+                    
+                    renderTabs();
+                });
+            }
+        }
+
+        function openFileInTab(filePath) {
+            if (!openTabs.includes(filePath)) {
+                openTabs.push(filePath);
+            }
+            switchToTab(filePath);
+        }
+
+        // --- Git Logic ---
+        const cloneRepoBtn = document.getElementById('clone-repo-btn');
+        const gitStatusList = document.getElementById('git-status-list');
+        const commitMessageInput = document.getElementById('commit-message-input');
+        const commitBtn = document.getElementById('commit-btn');
+        const pushBtn = document.getElementById('push-btn');
+        const gitLogList = document.getElementById('git-log-list');
+        const gitRefreshBtn = document.getElementById('git-refresh-btn');
+
+        async function updateFilesInVS() {
+            for (const [path, file] of fileMap.entries()) {
+                await pfs.writeFile(`/project/${path}`, await file.text());
+            }
+        }
+
+        async function refreshGitStatus() {
+            await updateFilesInVS();
+            const status = await git.statusMatrix({ fs, dir: '/project' });
+            gitStatusList.innerHTML = '';
+            const changedFiles = status.filter(row => row[1] !== row[2] || row[1] !== row[3]);
+
+            if (changedFiles.length === 0) {
+                gitStatusList.innerHTML = '<p class="text-gray-500">No changes detected.</p>';
+                commitBtn.disabled = true;
+                return;
+            }
+
+            changedFiles.forEach(([filepath, head, workdir, stage]) => {
+                const statusText = workdir === 0 ? 'new' : workdir === 2 ? 'modified' : 'deleted';
+                const isStaged = stage === 2;
+                const fileItem = document.createElement('div');
+                fileItem.className = 'flex justify-between items-center p-1 rounded-md';
+                fileItem.innerHTML = `
+                    <span class="truncate" title="${filepath}">${filepath} (${isStaged ? 'staged' : statusText})</span>
+                    <button class="navigator-btn text-xs px-2 py-1">${isStaged ? 'Unstage' : 'Stage'}</button>
+                `;
+                fileItem.querySelector('button').onclick = async () => {
+                    if (isStaged) {
+                        await git.remove({ fs, dir: '/project', filepath });
+                    } else {
+                        await git.add({ fs, dir: '/project', filepath });
+                    }
+                    refreshGitStatus();
+                };
+                gitStatusList.appendChild(fileItem);
             });
+            commitBtn.disabled = !status.some(row => row[3] === 2);
+        }
+        
+        async function refreshGitLog() {
+            try {
+                const commits = await git.log({ fs, dir: '/project', depth: 15 });
+                gitLogList.innerHTML = commits.map(commit => `
+                    <div class="p-1 border-b border-gray-800">
+                        <p class="font-semibold text-blue-400">${commit.oid.slice(0, 7)}</p>
+                        <p class="text-sm">${commit.commit.message.trim()}</p>
+                        <p class="text-xs text-gray-500">${commit.commit.author.name} on ${new Date(commit.commit.author.timestamp * 1000).toLocaleDateString()}</p>
+                    </div>
+                `).join('');
+            } catch (e) {
+                gitLogList.innerHTML = '<p class="text-gray-500">No commit history yet.</p>';
+            }
+        }
 
-            auditButtons.forEach(button => button.addEventListener('click', async (e) => {
-                const analysisType = e.currentTarget.dataset.analysis;
-                if (!currentCoderFile) { showStatusMessage('Please select a file first.'); return; }
-                
-                closeModal(auditModal);
-                analysisModalContent.innerHTML = `<div class="flex flex-col items-center justify-center h-full"><div class="spinner"></div><p class="mt-4">Analyzing ${analysisType}...</p></div>`;
-                openModal(analysisModal);
-                try {
-                    const code = await fileMap.get(currentCoderFile)?.text() || '';
-                    const systemPrompt = `You are an expert code reviewer. Analyze the code from '${currentCoderFile}' specifically for ${analysisType}. Provide a concise report in Markdown format.`;
-                    const report = await callGeminiAPI(systemPrompt, [{role: 'user', parts: [{text: code}]}], false);
-                    showAnalysis(report);
-                } catch(error) {
-                    showAnalysis(`<h3>Error during analysis</h3><p>${error.message}</p>`);
+        commitBtn.addEventListener('click', async () => {
+            const message = commitMessageInput.value;
+            if (!message) {
+                alert('Please enter a commit message.');
+                return;
+            }
+            await git.commit({
+                fs,
+                dir: '/project',
+                message,
+                author: { name: 'SP1D3R User', email: 'user@sp1d3r.dev' }
+            });
+            commitMessageInput.value = '';
+            refreshGitStatus();
+            refreshGitLog();
+            pushBtn.disabled = false;
+        });
+
+        async function pushToGitHub() {
+            log('Pushing to remote repository...');
+            pushBtn.disabled = true;
+            pushBtn.textContent = 'Pushing...';
+            
+            try {
+                const result = await git.push({
+                    fs,
+                    dir: '/project',
+                    onAuth: () => ({ username: localStorage.getItem('githubPat') || '' }),
+                });
+
+                if (result.ok) {
+                    log('Push successful.', 'success');
+                    showStatusMessage('Changes pushed successfully!');
+                    pushBtn.disabled = true; // Disable after successful push
+                } else {
+                    throw new Error(result.error);
                 }
-            }));
+            } catch (e) {
+                log(`Error pushing to repository: ${e.message}`, 'error', e);
+                alert(`Failed to push to repository. Check your Personal Access Token permissions. Error: ${e.message}`);
+                pushBtn.disabled = false;
+            } finally {
+                pushBtn.textContent = 'Push';
+                refreshGitLog();
+            }
+        }
 
-            closeAnalysisModalBtn.addEventListener('click', () => closeModal(analysisModal));
+        pushBtn.addEventListener('click', pushToGitHub);
+        gitRefreshBtn.addEventListener('click', refreshGitStatus);
+
+        async function loadFilesFromFS(dir) {
+            fileMap.clear();
+            const walk = async (currentDir) => {
+                const entries = await pfs.readdir(currentDir);
+                for (const entry of entries) {
+                    const path = `${currentDir}/${entry}`;
+                    const stat = await pfs.stat(path);
+                    if (stat.isDirectory()) {
+                        await walk(path);
+                    } else {
+                        const content = await pfs.readFile(path);
+                        const relativePath = path.substring(dir.length + 1);
+                        const file = new File([content], entry, { type: 'text/plain' });
+                        fileMap.set(relativePath, file);
+                    }
+                }
+            };
+            await walk(dir);
+            log(`Loaded ${fileMap.size} files into the editor.`, 'success');
+        }
+
+        async function cloneRepository() {
+            const url = prompt("Enter the GitHub repository URL to clone (e.g., https://github.com/user/repo):");
+            if (!url) return;
+
+            clearEditor();
+            fileMap.clear();
+            
+            loadingState.style.display = 'flex';
+            instructions.style.display = 'none';
+            log(`Cloning repository from ${url}...`);
+
+            const dir = '/project';
+            try {
+                try { await pfs.rm(dir, { recursive: true }); } catch (e) { /* ignore */ }
+                await pfs.mkdir(dir);
+
+                await git.clone({
+                    fs,
+                    dir,
+                    url,
+                    corsProxy: 'https://cors.isomorphic-git.org',
+                    singleBranch: true,
+                    depth: 1,
+                    onAuth: () => ({ username: localStorage.getItem('githubPat') || '' }),
+                });
+
+                log('Clone successful. Reading files...', 'success');
+                await loadFilesFromFS(dir);
+
+                selectProjectBtn.classList.add('hidden');
+                document.getElementById('file-input').style.display = 'none';
+                viewFilesBtn.classList.remove('hidden');
+                resetBtn.classList.remove('hidden');
+                document.getElementById('download-zip-btn').classList.remove('hidden');
+                selectFileBtn.disabled = false;
+                runAuditBtn.disabled = false;
+                openAuditModalBtn.disabled = false;
+
+                if (fileMap.has('README.md')) {
+                    openFileInTab('README.md');
+                }
+                
+                refreshGitStatus();
+                refreshGitLog();
+
+            } catch (e) {
+                log(`Error cloning repository: ${e.message}`, 'error', e);
+                alert(`Failed to clone repository. Check the URL and your Personal Access Token. Error: ${e.message}`);
+            } finally {
+                loadingState.style.display = 'none';
+            }
+        }
+
+        cloneRepoBtn.addEventListener('click', cloneRepository);
+
+        // --- Audit & Analysis Logic ---
+        const analysisModalContent = document.getElementById('analysis-modal-content');
+        const closeAnalysisModalBtn = document.getElementById('close-analysis-modal-btn');
+        
+        openAuditModalBtn.addEventListener('click', () => openModal(auditModal));
+        closeAuditModalBtn.addEventListener('click', () => closeModal(auditModal));
+        
+        const simpleMarkdownToHtml = (text) => text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/^- (.*$)/gm, '<ul><li>$1</li></ul>').replace(/<\/ul>\n<ul>/g, '').replace(/^(#+) (.*$)/gm, (m, h, c) => `<h${h.length+2}>${c}</h${h.length+2}>`).replace(/\n/g, '<br>');
+        
+        const showAnalysis = (content) => {
+            analysisModalContent.innerHTML = simpleMarkdownToHtml(content);
+            openModal(analysisModal);
+        };
+        
+        runAuditBtn.addEventListener('click', async () => {
+            const userPrompt = analysisPromptInput.value.trim();
+            if (fileMap.size === 0) { showStatusMessage('Please load a project first.'); return; }
+            if (!userPrompt) { showStatusMessage('Please describe what to audit.'); return; }
+            
+            closeModal(auditModal);
+            analysisModalContent.innerHTML = `<div class="flex flex-col items-center justify-center h-full"><div class="spinner"></div><p class="mt-4">Running custom audit...</p></div>`;
+            openModal(analysisModal);
+            
+            try {
+                let systemPrompt, content, historyForApi = [];
+                if (currentCoderFile) {
+                     content = await fileMap.get(currentCoderFile)?.text() || '';
+                     systemPrompt = `You are an expert code reviewer. Analyze the following code from '${currentCoderFile}' for the following user request: "${userPrompt}". Provide a concise report in Markdown format.`;
+                } else {
+                    content = '';
+                    for (const [path, file] of fileMap.entries()) content += `--- FILE: ${path} ---\n\n${await file.text()}\n\n`;
+                    systemPrompt = `You are a Principal Software Architect. Conduct a comprehensive review of the provided project source code. The user's specific analysis request is: "${userPrompt}". Evaluate based on: Architectural Soundness, Code Quality, Functionality, and Usability/UX. Provide a detailed analysis in Markdown format.`;
+                }
+                historyForApi.push({role: 'user', parts: [{text: content}]})
+                const report = await callGeminiAPI(systemPrompt, historyForApi, false);
+                showAnalysis(report);
+            } catch (error) {
+                showAnalysis(`<h3>Error during audit</h3><p>${error.message}</p>`);
+            }
+        });
+
+        auditButtons.forEach(button => button.addEventListener('click', async (e) => {
+            const analysisType = e.currentTarget.dataset.analysis;
+            if (!currentCoderFile) { showStatusMessage('Please select a file first.'); return; }
+            
+            closeModal(auditModal);
+            analysisModalContent.innerHTML = `<div class="flex flex-col items-center justify-center h-full"><div class="spinner"></div><p class="mt-4">Analyzing ${analysisType}...</p></div>`;
+            openModal(analysisModal);
+            try {
+                const code = await fileMap.get(currentCoderFile)?.text() || '';
+                const systemPrompt = `You are an expert code reviewer. Analyze the code from '${currentCoderFile}' specifically for ${analysisType}. Provide a concise report in Markdown format.`;
+                const report = await callGeminiAPI(systemPrompt, [{role: 'user', parts: [{text: code}]}], false);
+                showAnalysis(report);
+            } catch(error) {
+                showAnalysis(`<h3>Error during analysis</h3><p>${error.message}</p>`);
+            }
+        }));
+
+        closeAnalysisModalBtn.addEventListener('click', () => closeModal(analysisModal));
 
             // --- Settings Modal ---
             const settingsBtn = document.getElementById('settings-btn');
             const cancelSettingsBtn = document.getElementById('cancel-settings-btn');
             const saveSettingsBtn = document.getElementById('save-settings-btn');
             const apiKeyInput = document.getElementById('api-key-input');
-            settingsBtn.addEventListener('click', () => { apiKeyInput.value = localStorage.getItem('geminiApiKey') || ''; openModal(settingsModal); });
+            const githubPatInput = document.getElementById('github-pat-input');
+            settingsBtn.addEventListener('click', () => { 
+                apiKeyInput.value = localStorage.getItem('geminiApiKey') || ''; 
+                githubPatInput.value = localStorage.getItem('githubPat') || '';
+                openModal(settingsModal); 
+            });
             cancelSettingsBtn.addEventListener('click', () => closeModal(settingsModal));
-            saveSettingsBtn.addEventListener('click', () => { localStorage.setItem('geminiApiKey', apiKeyInput.value); closeModal(settingsModal); });
+            saveSettingsBtn.addEventListener('click', () => { 
+                localStorage.setItem('geminiApiKey', apiKeyInput.value); 
+                localStorage.setItem('githubPat', githubPatInput.value);
+                closeModal(settingsModal); 
+            });
 
             // --- Resizable Columns Logic ---
             let isResizing = false;
@@ -964,6 +1843,13 @@
                 await loadScript('https://unpkg.com/react@17/umd/react.development.js');
                 await loadScript('https://unpkg.com/react-dom@17/umd/react-dom.development.js');
                 log('React dependencies loaded.', 'success');
+                
+                log('Initializing virtual file system...');
+                fs = new LightningFS('fs');
+                pfs = fs.promises;
+                git.plugins.set('fs', fs);
+                log('Virtual file system ready.', 'success');
+
                 setupPairCoder();
                 log('Pair Coder initialized.', 'success');
                 log('Please select a project to begin.');
