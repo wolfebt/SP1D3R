@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SP1D3R</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #fff;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #static-site-frame {
+            border: none;
+            width: 100%;
+            height: 100%;
+        }
+        .file-tree-item {
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .file-tree-item:hover {
+            background-color: #2d3748;
+        }
+        .file-tree-children {
+            padding-left: 1.5rem;
+            border-left: 1px solid #4a5568;
+        }
+        .download-btn {
+            opacity: 0.3;
+            transition: all 0.2s;
+        }
+        .file-tree-item:hover .download-btn {
+            opacity: 1;
+        }
+        /* Pair Coder Styles */
+        .code-font {
+            font-family: 'Source Code Pro', monospace;
+        }
+        .prompt-input, .code-output, .modal-content, .navigator-btn, .audit-input, #chat-input {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+        }
+        .prompt-input:focus, .audit-input:focus, #chat-input:focus {
+            outline: none;
+            border-color: #2f81f7;
+            box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.4);
+        }
+        .submit-btn {
+            background-color: #238636;
+            color: white;
+            transition: background-color 0.2s;
+        }
+        .submit-btn:hover {
+            background-color: #2ea043;
+        }
+        .submit-btn:disabled {
+            background-color: #238636a1;
+            cursor: not-allowed;
+        }
+        .navigator-btn {
+            transition: background-color 0.2s;
+            color: #c9d1d9;
+        }
+        .navigator-btn:hover {
+            background-color: #21262d;
+        }
+        .navigator-btn:disabled {
+            background-color: #161b22;
+            color: #484f58;
+            cursor: not-allowed;
+        }
+        .settings-btn {
+            color: #8b949e;
+            transition: color 0.2s;
+        }
+        .settings-btn:hover {
+            color: #c9d1d9;
+        }
+        .tab-btn {
+            padding: 8px 16px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            color: #8b949e;
+        }
+        .tab-btn.active {
+            color: #c9d1d9;
+            border-bottom-color: #2f81f7;
+        }
+        /* Simple prose styles for analysis report */
+        .prose h3 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+        .prose p { margin-bottom: 1rem; }
+        .prose ul { list-style-position: inside; margin-left: 1.25rem; margin-bottom: 1rem; }
+        .prose code { background-color: #2d3748; padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.9em; }
+        
+        /* Resizable columns */
+        .resizable-handle {
+            background-color: #30363d;
+            width: 8px;
+            cursor: col-resize;
+            flex-shrink: 0;
+        }
+        .resizable-handle:hover {
+            background-color: #2f81f7;
+        }
+
+        /* Chat UI Styles */
+        .chat-message.user {
+            background-color: #21262d;
+            align-self: flex-end;
+        }
+        .chat-message.ai {
+            background-color: #161b22;
+            align-self: flex-start;
+        }
+         #chat-history {
+            scrollbar-width: thin;
+            scrollbar-color: #4a5568 #161b22;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-300">
+
+    <input type="file" id="file-input" webkitdirectory directory multiple class="hidden">
+
+    <!-- Modals -->
+    <div id="file-tree-modal" class="fixed inset-0 bg-black bg-opacity-75 z-50 hidden items-center justify-center p-4">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] flex flex-col border border-gray-700">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
+                <h3 id="file-tree-title" class="text-xl font-bold text-white">Project Files</h3>
+                <button id="close-modal-btn" class="text-gray-400 hover:text-white text-3xl font-bold">&times;</button>
+            </div>
+            <div id="file-tree-container" class="p-4 overflow-y-auto font-mono text-sm"></div>
+        </div>
+    </div>
+
+    <div id="console-modal" class="fixed inset-0 bg-black bg-opacity-75 z-50 hidden items-center justify-center p-4">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl h-3/4 flex flex-col border border-gray-700">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center flex-shrink-0">
+                <h3 class="text-xl font-bold text-white">Emulator Console</h3>
+                <div class="flex items-center space-x-4">
+                     <button id="clear-console-btn" title="Clear Console" class="text-gray-400 hover:text-white text-xs uppercase font-semibold">Clear</button>
+                    <button id="close-console-modal-btn" class="text-gray-400 hover:text-white text-3xl font-bold">&times;</button>
+                </div>
+            </div>
+            <div id="console-output" class="p-4 overflow-y-auto font-mono text-sm flex-grow space-y-2">
+                 <div class="text-gray-500">Initializing emulator...</div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-75 z-[60] hidden items-center justify-center p-4">
+        <div class="modal-content p-8 rounded-lg w-full max-w-md">
+            <h2 class="text-xl font-bold mb-4">Settings</h2>
+            <label for="api-key-input" class="block mb-2 text-sm font-medium text-gray-400">Gemini API Key</label>
+            <input type="password" id="api-key-input" class="prompt-input w-full p-2 rounded-md mb-4">
+            <div class="flex justify-end gap-4">
+                <button id="cancel-settings-btn" class="navigator-btn px-4 py-2 rounded-md">Cancel</button>
+                <button id="save-settings-btn" class="submit-btn px-4 py-2 rounded-md">Save</button>
+            </div>
+        </div>
+    </div>
+    <div id="analysis-modal" class="fixed inset-0 bg-black bg-opacity-75 z-[70] hidden items-center justify-center p-4">
+        <div class="modal-content p-6 rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div id="analysis-modal-content" class="prose flex-grow overflow-y-auto pr-4"></div>
+            <div class="flex justify-end mt-4 pt-4 border-t border-gray-700">
+                <button id="close-analysis-modal-btn" class="submit-btn px-4 py-2 rounded-md">Close</button>
+            </div>
+        </div>
+    </div>
+    <div id="audit-modal" class="fixed inset-0 bg-black bg-opacity-75 z-[60] hidden items-center justify-center p-4">
+        <div class="modal-content p-6 rounded-lg w-full max-w-md flex flex-col">
+             <div class="flex justify-between items-center mb-4">
+                 <h3 class="text-xl font-bold text-white">Project & File Audit</h3>
+                 <button id="close-audit-modal-btn" class="text-gray-400 hover:text-white text-3xl font-bold">&times;</button>
+             </div>
+             <div class="space-y-4">
+                 <p class="text-sm text-gray-400">Run a quick analysis on the selected file or a custom analysis on the entire project.</p>
+                 <div id="quick-audit-buttons" class="grid grid-cols-2 gap-2">
+                     <button class="navigator-btn p-2 rounded-md text-sm" data-analysis="readability" disabled>Readability</button>
+                     <button class="navigator-btn p-2 rounded-md text-sm" data-analysis="performance" disabled>Performance</button>
+                     <button class="navigator-btn p-2 rounded-md text-sm" data-analysis="security" disabled>Security</button>
+                     <button class="navigator-btn p-2 rounded-md text-sm" data-analysis="refactor" disabled>Suggest Refactor</button>
+                 </div>
+                 <textarea id="analysis-prompt-input" class="audit-input w-full p-2 text-sm rounded-lg" placeholder="Ask for a specific project or file analysis..." rows="3"></textarea>
+                 <button id="run-audit-btn" class="submit-btn font-semibold px-4 py-2 rounded-lg w-full text-sm" disabled>Run Custom Audit</button>
+             </div>
+        </div>
+    </div>
+
+    <!-- Main Application Wrapper -->
+    <div class="flex flex-col h-screen">
+        <!-- Header -->
+        <header class="bg-gray-800 border-b border-gray-700 p-4 flex items-center justify-between z-10">
+            <div class="flex items-center space-x-6">
+                <div class="flex items-center space-x-3">
+                    <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                    <h1 class="text-2xl font-bold text-gray-200">SP1D3R</h1>
+                </div>
+                <div class="flex items-center border-l border-gray-700 pl-6 space-x-2">
+                    <button id="emulator-tab-btn" class="tab-btn active">Web Emulator</button>
+                    <button id="coder-tab-btn" class="tab-btn">Pair Coder</button>
+                </div>
+            </div>
+            <div id="emulator-controls" class="flex items-center space-x-4">
+                <label for="file-input" id="select-project-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg cursor-pointer transition-all duration-300 inline-flex items-center shadow-sm">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>
+                    Select Project
+                </label>
+                <button id="view-files-btn" class="hidden bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg"><svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>View Files</button>
+                <button id="reset-btn" class="hidden bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg"><svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>New Project</button>
+                <div class="border-l h-8 border-gray-600"></div>
+                <button id="view-console-btn" title="View Console" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg ml-2"><svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M20 4H4C2.9 4 2 4.9 2 6V18C2 19.1 2.9 20 4 20H20C21.1 20 22 19.1 22 18V6C22 4.9 21.1 4 20 4ZM8 17H6V15H8V17ZM12 11H6V9H12V11Z"/></svg></button>
+            </div>
+            <div id="coder-controls" class="hidden items-center space-x-4">
+                 <button id="settings-btn" class="settings-btn p-2 rounded-full"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <div id="main-content" class="flex-grow overflow-hidden">
+            <!-- Web Emulator View -->
+            <main id="emulator-view" class="flex-grow flex flex-col overflow-hidden h-full">
+                <div id="render-panel" class="w-full flex-grow flex flex-col bg-gray-900 overflow-auto">
+                    <div id="instructions" class="flex flex-col items-center p-8 text-center">
+                        <h2 class="text-3xl font-bold mb-4 text-gray-100">Web Application Emulator</h2>
+                        <p class="text-gray-400 max-w-xl mb-8">Preview your multi-file React or Static HTML projects by selecting a project folder.</p>
+                    </div>
+                    <div id="loading-state" class="hidden flex-col items-center justify-center h-full">
+                        <div class="spinner"></div>
+                        <p class="mt-4 text-gray-500">Processing your application...</p>
+                    </div>
+                    <div id="app-root" class="flex-grow w-full h-full" style="display: none;"></div>
+                    <iframe id="static-site-frame" style="display: none;"></iframe>
+                </div>
+            </main>
+
+            <!-- Pair Coder View -->
+             <main id="coder-view" class="hidden h-full flex overflow-hidden">
+                <!-- Left Sidebar -->
+                <div id="coder-sidebar" class="bg-gray-800 p-4 flex flex-col overflow-hidden" style="width: 25%;">
+                    <div id="code-generation-container" class="flex flex-col h-1/2 min-h-[250px] mb-4">
+                        <div class="flex justify-between items-center mb-2">
+                             <label class="text-lg font-semibold text-gray-300">AI Chat</label>
+                             <p id="status-message" class="text-sm text-gray-500 h-5"></p>
+                        </div>
+                        <div id="chat-history" class="flex-grow p-4 space-y-4 overflow-y-auto bg-gray-900 rounded-t-lg flex flex-col">
+                            <div class="chat-message ai p-3 rounded-lg max-w-xl text-sm">
+                                <p>Hello! I'm your AI pair programmer. Load a project, select a file, and tell me what you'd like to do. You can also ask me any programming question.</p>
+                            </div>
+                        </div>
+                        <form id="chat-form" class="flex flex-col">
+                            <textarea id="chat-input" class="w-full p-2 text-sm rounded-md resize-none" placeholder="Ask a question or request a code change..." rows="3"></textarea>
+                            <div class="flex justify-end mt-2">
+                                <button id="send-chat-btn" type="submit" class="submit-btn font-semibold px-4 py-2 rounded-lg flex items-center text-sm">
+                                    Send
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="flex flex-col flex-grow overflow-hidden">
+                        <div class="flex justify-between items-center mb-2">
+                             <h3 class="text-lg font-semibold text-gray-300">Functions</h3>
+                             <button id="open-audit-modal-btn" class="navigator-btn px-3 py-1 rounded-md text-sm" disabled>Audit</button>
+                        </div>
+                        <div id="function-list" class="flex-grow overflow-y-auto border-t border-gray-700 py-2">
+                            <p class="text-xs text-gray-500">Select a file to see its functions.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resizer Handle -->
+                <div id="resizer" class="resizable-handle"></div>
+                
+                <!-- Right Main Panel -->
+                <div id="main-coder-panel" class="flex-grow p-4 flex flex-col overflow-hidden" style="width: 75%;">
+                    <div class="flex justify-between items-center mb-2">
+                        <div>
+                            <label for="code-editor" class="text-lg font-semibold text-gray-300">Main Canvas</label>
+                            <p id="current-file-display" class="text-xs text-gray-500 code-font">No file selected.</p>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <button id="copy-code-btn" class="navigator-btn px-3 py-1 rounded-md text-sm">Copy</button>
+                            <button id="select-file-btn" class="navigator-btn px-3 py-1 rounded-md text-sm" disabled>Select File</button>
+                            <button id="save-file-btn" class="navigator-btn px-3 py-1 rounded-md text-sm" disabled>Save & Refresh</button>
+                            <button id="undo-btn" class="navigator-btn px-3 py-1 rounded-md text-sm" disabled>Undo</button>
+                            <button id="redo-btn" class="navigator-btn px-3 py-1 rounded-md text-sm" disabled>Redo</button>
+                        </div>
+                    </div>
+                    <pre id="code-editor" class="code-font w-full p-4 text-sm flex-grow rounded-lg bg-gray-900 overflow-auto"><code>// Load a project, then select a file to begin coding.</code></pre>
+                </div>
+            </main>
+        </div>
+    </div>
+    
+    <script type="module">
+        // --- TABS ---
+        const emulatorTabBtn = document.getElementById('emulator-tab-btn');
+        const coderTabBtn = document.getElementById('coder-tab-btn');
+        const emulatorView = document.getElementById('emulator-view');
+        const coderView = document.getElementById('coder-view');
+        const emulatorControls = document.getElementById('emulator-controls');
+        const coderControls = document.getElementById('coder-controls');
+
+        function switchToEmulator() {
+            emulatorTabBtn.classList.add('active'); coderTabBtn.classList.remove('active');
+            emulatorView.classList.remove('hidden'); coderView.classList.add('hidden');
+            emulatorControls.classList.remove('hidden'); emulatorControls.classList.add('flex');
+            coderControls.classList.add('hidden');
+        }
+        function switchToCoder() {
+            coderTabBtn.classList.add('active'); emulatorTabBtn.classList.remove('active');
+            coderView.classList.remove('hidden'); coderView.classList.add('flex');
+            emulatorView.classList.add('hidden');
+            coderControls.classList.remove('hidden'); coderControls.classList.add('flex');
+            emulatorControls.classList.add('hidden'); emulatorControls.classList.remove('flex');
+        }
+        emulatorTabBtn.addEventListener('click', switchToEmulator);
+        coderTabBtn.addEventListener('click', switchToCoder);
+
+        // --- DOM Elements ---
+        const fileInput = document.getElementById('file-input');
+        const appRoot = document.getElementById('app-root');
+        const staticSiteFrame = document.getElementById('static-site-frame');
+        const instructions = document.getElementById('instructions');
+        const loadingState = document.getElementById('loading-state');
+        const consoleOutput = document.getElementById('console-output');
+        const clearConsoleBtn = document.getElementById('clear-console-btn');
+        const selectProjectBtn = document.getElementById('select-project-btn');
+        const viewConsoleBtn = document.getElementById('view-console-btn');
+        const viewFilesBtn = document.getElementById('view-files-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const fileTreeModal = document.getElementById('file-tree-modal');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const fileTreeContainer = document.getElementById('file-tree-container');
+        const fileTreeTitle = document.getElementById('file-tree-title');
+        const consoleModal = document.getElementById('console-modal');
+        const closeConsoleModalBtn = document.getElementById('close-console-modal-btn');
+        
+        // --- SHARED STATE ---
+        let fileMap = new Map();
+        const transpiledCache = new Map();
+        let currentProjectType = 'static';
+        let currentCoderFile = null;
+
+        // --- PAIR CODER DOM Elements ---
+        const coderSidebar = document.getElementById('coder-sidebar');
+        const mainCoderPanel = document.getElementById('main-coder-panel');
+        const resizer = document.getElementById('resizer');
+        const functionList = document.getElementById('function-list');
+        const selectFileBtn = document.getElementById('select-file-btn');
+        const saveFileBtn = document.getElementById('save-file-btn');
+        const currentFileDisplay = document.getElementById('current-file-display');
+        const auditModal = document.getElementById('audit-modal');
+        const openAuditModalBtn = document.getElementById('open-audit-modal-btn');
+        const closeAuditModalBtn = document.getElementById('close-audit-modal-btn');
+        const auditButtons = document.querySelectorAll('#quick-audit-buttons .navigator-btn');
+        const analysisPromptInput = document.getElementById('analysis-prompt-input');
+        const runAuditBtn = document.getElementById('run-audit-btn');
+        const settingsModal = document.getElementById('settings-modal');
+        const analysisModal = document.getElementById('analysis-modal');
+        
+        // --- Logging & Status ---
+        function log(message, type = 'info', details) {
+            const now = new Date();
+            const timestamp = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+            const colors = { info: 'text-gray-400', success: 'text-green-400', error: 'text-red-400', warn: 'text-yellow-400' };
+            const logEntry = document.createElement('div');
+            logEntry.className = `flex items-start ${colors[type]}`;
+            let messageHTML = `<span class="mr-2 text-gray-500">${timestamp}</span> <span class="flex-grow">${message.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</span>`;
+            if (details) {
+                const detailsEl = document.createElement('div');
+                detailsEl.className = 'mt-1 pl-6 text-xs text-gray-500 whitespace-pre-wrap';
+                detailsEl.textContent = (details instanceof Error) ? (details.stack || details.message) : (typeof details === 'object' ? JSON.stringify(details, null, 2) : details);
+                messageHTML += detailsEl.outerHTML; 
+            }
+            logEntry.innerHTML = messageHTML;
+            consoleOutput.appendChild(logEntry);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+        clearConsoleBtn.addEventListener('click', () => { consoleOutput.innerHTML = `<div class="text-gray-400">Console cleared.</div>`; });
+        
+        const statusMessage = document.getElementById('status-message');
+        function showStatusMessage(message, duration = 4000) {
+            statusMessage.textContent = message;
+            setTimeout(() => { statusMessage.textContent = ''; }, duration);
+        }
+
+        // --- Modal UI Logic ---
+        const allModals = [fileTreeModal, consoleModal, settingsModal, analysisModal, auditModal];
+
+        function closeModal(modal) {
+            modal.classList.add('hidden');
+            modal.classList.remove('flex', 'items-center', 'justify-center');
+        }
+
+        function openModal(modal) {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex', 'items-center', 'justify-center');
+        }
+
+        allModals.forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeModal(modal);
+                }
+            });
+        });
+
+        viewConsoleBtn.addEventListener('click', () => openModal(consoleModal));
+        closeConsoleModalBtn.addEventListener('click', () => closeModal(consoleModal));
+        
+        const openFileTreeModal = (title, onFileClick) => {
+            fileTreeTitle.textContent = title;
+            buildAndRenderFileTree(fileMap, onFileClick);
+            openModal(fileTreeModal);
+        };
+        viewFilesBtn.addEventListener('click', () => openFileTreeModal('Project Files'));
+        closeModalBtn.addEventListener('click', () => closeModal(fileTreeModal));
+        
+        resetBtn.addEventListener('click', () => { location.reload(); });
+
+        // --- Core Emulation & Project Logic ---
+        fileInput.addEventListener('change', handleFileSelect);
+
+        async function handleFileSelect(event) {
+            if (event.target.files.length === 0) return;
+            instructions.style.display = 'none';
+            loadingState.style.display = 'flex';
+            fileMap.clear();
+            transpiledCache.clear();
+            consoleOutput.innerHTML = '';
+
+            const files = event.target.files;
+            const rootDir = files[0].webkitRelativePath.split('/')[0];
+            
+            for (const file of files) {
+                const path = file.webkitRelativePath.substring(rootDir.length + 1);
+                fileMap.set(path, file);
+            }
+            log(`${fileMap.size} files loaded from '${rootDir}'.`, 'success');
+            
+            selectProjectBtn.classList.add('hidden');
+            viewFilesBtn.classList.remove('hidden');
+            resetBtn.classList.remove('hidden');
+            selectFileBtn.disabled = false;
+            runAuditBtn.disabled = false;
+            openAuditModalBtn.disabled = false;
+
+            currentProjectType = detectProjectType(fileMap);
+            log(`Auto-detected project type: ${currentProjectType.toUpperCase()}`);
+            await refreshEmulator();
+        }
+
+        async function refreshEmulator() {
+            loadingState.style.display = 'flex';
+            appRoot.style.display = 'none';
+            staticSiteFrame.style.display = 'none';
+            appRoot.innerHTML = '';
+            transpiledCache.clear();
+            document.head.querySelectorAll('style[data-dynamic-style]').forEach(s => s.remove());
+            log('Refreshing emulator...');
+            try {
+                if (currentProjectType === 'react') await emulateReactApp(fileMap);
+                else await emulateStaticSite(fileMap);
+            } catch (e) {
+                log(`A critical error occurred during refresh: ${e.message}`, 'error', e);
+            } finally {
+                 loadingState.style.display = 'none';
+            }
+        }
+        
+        function detectProjectType(files) {
+            const filePaths = Array.from(files.keys());
+            if (filePaths.some(p => p.endsWith('.jsx')) || findEntryPoint(files)) return 'react';
+            return 'static';
+        }
+
+        async function emulateStaticSite(files) {
+            log('Starting static site emulation...');
+            staticSiteFrame.style.display = 'block';
+            const indexPath = findFile(files, ['index.html', 'src/index.html']);
+            if (!indexPath) throw new Error('Could not find index.html');
+            const indexFile = files.get(indexPath);
+            const base = indexPath.includes('/') ? indexPath.substring(0, indexPath.lastIndexOf('/')) : '';
+            const htmlContent = await indexFile.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(htmlContent, 'text/html');
+            const elementsToUpdate = doc.querySelectorAll('link[href], script[src], img[src], a[href]');
+            for (const el of elementsToUpdate) {
+                const attr = el.hasAttribute('href') ? 'href' : 'src';
+                let path = el.getAttribute(attr);
+                if (path && !/^(https?|blob|data|#):/.test(path)) {
+                    const resolvedPath = resolvePath(base, path);
+                    const file = files.get(resolvedPath);
+                    if (file) {
+                        const blobUrl = URL.createObjectURL(new Blob([await file.text()], {type: file.type}));
+                        el.setAttribute(attr, blobUrl);
+                    } else {
+                        log(`Asset not found: ${resolvedPath}`, 'warn');
+                    }
+                }
+            }
+            const finalHtml = new XMLSerializer().serializeToString(doc);
+            staticSiteFrame.src = URL.createObjectURL(new Blob([finalHtml], { type: 'text/html' }));
+            log('Static site rendered.', 'success');
+        }
+
+        async function emulateReactApp(files) {
+            log('Starting React app emulation...');
+            appRoot.style.display = 'block';
+            appRoot.innerHTML = '<div id="root"></div>';
+            const entryPointPath = findEntryPoint(files);
+            if (!entryPointPath) throw new Error('Could not find a suitable entry point (e.g., src/index.js).');
+            await executeModule(entryPointPath, files);
+            log('React app emulation finished.', 'success');
+        }
+
+        const findEntryPoint = (files) => findFile(files, ['src/index.js', 'src/index.jsx', 'index.js', 'index.jsx']);
+        
+        const executeModule = async (path, files, visited = new Set()) => {
+            const normalizedPath = path.replace(/\\/g, '/');
+            if (visited.has(normalizedPath)) return transpiledCache.get(normalizedPath)?.exports;
+            visited.add(normalizedPath);
+            if (transpiledCache.has(normalizedPath)) return transpiledCache.get(normalizedPath).exports;
+
+            const file = files.get(normalizedPath);
+            if (!file) throw new Error(`Module not found: ${normalizedPath}`);
+            const code = await file.text();
+            let transformedCode;
+            try {
+                if (normalizedPath.endsWith('.css')) {
+                    const style = document.createElement('style');
+                    style.textContent = code; style.setAttribute('data-dynamic-style', 'true');
+                    document.head.appendChild(style);
+                    transpiledCache.set(normalizedPath, { exports: {} });
+                    return {};
+                }
+                if (/\.(png|jpg|jpeg|gif|svg|webp)$/.test(normalizedPath)) {
+                    transformedCode = `export default "${URL.createObjectURL(file)}";`;
+                } else {
+                    transformedCode = Babel.transform(code, { presets: ['react', 'es2015'], filename: normalizedPath }).code;
+                }
+            } catch (e) {
+                log(`Error transforming module ${normalizedPath}`, 'error', e); throw e;
+            }
+            const dependencies = Array.from(new Set(Array.from(code.matchAll(/require\(['"]([^'"]+)['"]\)/g), m => m[1])));
+            const dependencyExports = {};
+            for (const dep of dependencies) {
+                if (['react', 'react-dom', 'react-dom/client'].includes(dep)) continue;
+                const resolvedFile = findFile(files, [`${resolvePath(normalizedPath, `../${dep}`)}.js`, `${resolvePath(normalizedPath, `../${dep}`)}.jsx`, `${resolvePath(normalizedPath, `../${dep}`)}/index.js`]);
+                if (!resolvedFile) throw new Error(`Could not resolve dependency '${dep}' from '${normalizedPath}'`);
+                dependencyExports[dep] = await executeModule(resolvedFile, files, visited);
+            }
+            const exports = {}; const module = { exports };
+            const require = (dep) => {
+                if (dep === 'react') return window.React; if (dep === 'react-dom') return window.ReactDOM;
+                if (dep === 'react-dom/client') return { createRoot: (el) => ({ render: (app) => ReactDOM.render(app, el) }) };
+                return dependencyExports[dep];
+            };
+            try {
+                new Function('module', 'exports', 'require', transformedCode)(module, exports, require);
+            } catch(e) {
+                log(`Error executing module ${normalizedPath}`, 'error', e); throw e;
+            }
+            transpiledCache.set(normalizedPath, { exports: module.exports });
+            return module.exports;
+        };
+        
+        const resolvePath = (base, relative) => {
+            const stack = base.split('/').filter(i => i && i !== '.');
+            stack.pop();
+            relative.split('/').forEach(part => {
+                if (part === '..') stack.pop(); else if (part && part !== '.') stack.push(part);
+            });
+            return stack.join('/');
+        };
+
+        const findFile = (files, possibilities) => {
+            for (const p of possibilities) if (files.has(p)) return p;
+            return undefined;
+        };
+
+        function downloadFile(filePath) {
+            const file = fileMap.get(filePath);
+            if (!file) {
+                log(`Could not find file to download: ${filePath}`, 'error');
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(file);
+            link.download = file.name;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
+            showStatusMessage(`Downloading '${file.name}'...`, 2000);
+        }
+
+        function buildAndRenderFileTree(files, onFileClick) {
+            const tree = {};
+            for (const path of files.keys()) {
+                let currentLevel = tree;
+                path.split('/').forEach((part, i, arr) => {
+                    if (!currentLevel[part]) currentLevel[part] = {};
+                    if (i < arr.length - 1) currentLevel = currentLevel[part];
+                });
+            }
+            fileTreeContainer.innerHTML = '';
+            renderTree(tree, fileTreeContainer, '', onFileClick);
+        }
+
+        function renderTree(node, container, basePath, onFileClick) {
+            Object.keys(node).sort().forEach(key => {
+                const isFolder = Object.keys(node[key]).length > 0;
+                const currentPath = basePath ? `${basePath}/${key}` : key;
+                const itemEl = document.createElement('div');
+                itemEl.className = 'file-tree-item';
+                
+                const itemContent = document.createElement('span');
+                itemContent.className = 'flex-grow';
+                itemContent.textContent = `${isFolder ? '📁' : '📄'} ${key}`;
+                itemEl.appendChild(itemContent);
+
+                if (!isFolder) {
+                    if (onFileClick) {
+                        itemEl.addEventListener('click', (e) => { e.stopPropagation(); onFileClick(currentPath); });
+                    }
+                    const downloadBtn = document.createElement('button');
+                    downloadBtn.className = 'download-btn text-gray-400 hover:text-white flex-shrink-0';
+                    downloadBtn.title = `Download ${key}`;
+                    downloadBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>`;
+                    downloadBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        downloadFile(currentPath);
+                    });
+                    itemEl.appendChild(downloadBtn);
+                }
+                
+                container.appendChild(itemEl);
+
+                if (isFolder) {
+                    const childrenContainer = document.createElement('div');
+                    childrenContainer.className = 'file-tree-children hidden';
+                    renderTree(node[key], childrenContainer, currentPath, onFileClick);
+                    container.appendChild(childrenContainer);
+
+                    // Re-instated more robust click handling for folders
+                    itemEl.addEventListener('click', (e) => { 
+                        e.stopPropagation(); 
+                        childrenContainer.classList.toggle('hidden');
+                    });
+                }
+            });
+        }
+        
+        // --- PAIR CODER SCRIPT ---
+        const setupPairCoder = () => {
+            const chatHistoryContainer = document.getElementById('chat-history');
+            const chatForm = document.getElementById('chat-form');
+            const chatInput = document.getElementById('chat-input');
+            const codeEditor = document.getElementById('code-editor');
+            const undoBtn = document.getElementById('undo-btn');
+            const redoBtn = document.getElementById('redo-btn');
+            const copyCodeBtn = document.getElementById('copy-code-btn');
+            
+            let codeHistory = [codeEditor.querySelector('code').textContent];
+            let historyIndex = 0;
+            let chatHistory = [];
+
+            const autoResizeChatInput = () => {
+                chatInput.style.height = 'auto';
+                const scrollHeight = chatInput.scrollHeight;
+                // Limit height to a max of around 6 lines
+                const maxHeight = 24 * 6;
+                chatInput.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
+            };
+            chatInput.addEventListener('input', autoResizeChatInput);
+            
+            chatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    chatForm.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                }
+            });
+
+            const updateCodeEditor = (newCode, addToHistory = true) => {
+                codeEditor.querySelector('code').textContent = newCode;
+                if (addToHistory) {
+                    if (historyIndex < codeHistory.length - 1) codeHistory.splice(historyIndex + 1);
+                    codeHistory.push(newCode);
+                    historyIndex++;
+                    updateUndoRedoState();
+                }
+            };
+            
+            const addMessageToChat = (text, sender, addToApiHistory = true) => {
+                const messageEl = document.createElement('div');
+                messageEl.className = `chat-message ${sender} p-3 rounded-lg max-w-xl text-sm`;
+                messageEl.textContent = text;
+                chatHistoryContainer.appendChild(messageEl);
+                chatHistoryContainer.scrollTop = chatHistoryContainer.scrollHeight;
+                if (addToApiHistory) {
+                    chatHistory.push({ role: (sender === 'user' ? 'user' : 'model'), parts: [{ text }] });
+                }
+            };
+
+            const handleChatSubmit = async (event) => {
+                event.preventDefault();
+                const userInput = chatInput.value.trim();
+                if (!userInput) return;
+
+                if (!currentCoderFile) { 
+                    showStatusMessage('Please select a file before making a code request.');
+                }
+                addMessageToChat(userInput, 'user');
+                chatInput.value = '';
+                autoResizeChatInput();
+                
+                const thinkingEl = document.createElement('div');
+                thinkingEl.className = 'chat-message ai p-3 rounded-lg max-w-xl text-sm';
+                thinkingEl.innerHTML = '<div class="spinner w-5 h-5"></div>';
+                chatHistoryContainer.appendChild(thinkingEl);
+                chatHistoryContainer.scrollTop = chatHistoryContainer.scrollHeight;
+                
+                try {
+                    const currentCode = await fileMap.get(currentCoderFile)?.text() || '';
+                    const systemPrompt = `You are SP1D3R, an expert AI pair programmer with two primary capabilities:
+                        1. CODE MODIFICATION: If the user provides an instruction to create, modify, or refactor code for the currently selected file ('${currentCoderFile || 'none'}'), your ENTIRE response MUST be ONLY the complete, updated, raw source code for that file. Do not include explanations or markdown.
+                        2. CONVERSATIONAL Q&A: If the user asks a question, requests information, or has a general conversation, you must respond as a helpful AI assistant. For up-to-date or specific programming information, you MUST use the provided Google Search tool. Your answer should be in a clear, conversational format.
+                        Current Code Context:\n\`\`\`\n${currentCode}\n\`\`\``;
+
+                    const aiResponse = await callGeminiAPI(systemPrompt, chatHistory, true);
+                    
+                    const codeBlockRegex = /^(<!DOCTYPE html>|import |const |let |var |function |class |\/\*|@|public |private |if \()/im;
+                    if (codeBlockRegex.test(aiResponse)) {
+                        updateCodeEditor(aiResponse);
+                        addMessageToChat("I've updated the code in the Main Canvas based on your request.", 'ai', false);
+                    } else {
+                        addMessageToChat(aiResponse, 'ai');
+                    }
+                } catch (error) {
+                    addMessageToChat(`Error: ${error.message}`, 'ai', false);
+                } finally {
+                    chatHistoryContainer.removeChild(thinkingEl);
+                }
+            };
+            chatForm.addEventListener('submit', handleChatSubmit);
+            
+            const handleCopyClick = (textToCopy, buttonElement) => {
+                if (!textToCopy || textToCopy.trim() === '') { showStatusMessage('Nothing to copy.'); return; }
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    const originalText = buttonElement.textContent;
+                    buttonElement.textContent = 'Copied!';
+                    setTimeout(() => { buttonElement.textContent = originalText; }, 2000);
+                }).catch(err => { showStatusMessage('Failed to copy.'); });
+            };
+            copyCodeBtn.addEventListener('click', () => handleCopyClick(codeEditor.querySelector('code').textContent, copyCodeBtn));
+
+            const updateUndoRedoState = () => { undoBtn.disabled = historyIndex <= 0; redoBtn.disabled = historyIndex >= codeHistory.length - 1; };
+            undoBtn.addEventListener('click', () => { if (historyIndex > 0) { historyIndex--; updateCodeEditor(codeHistory[historyIndex], false); updateUndoRedoState(); } });
+            redoBtn.addEventListener('click', () => { if (historyIndex < codeHistory.length - 1) { historyIndex++; updateCodeEditor(codeHistory[historyIndex], false); updateUndoRedoState(); } });
+
+            selectFileBtn.addEventListener('click', () => {
+                openFileTreeModal('Select a File to Edit', (filePath) => {
+                    const file = fileMap.get(filePath);
+                    if (file) {
+                        file.text().then(content => {
+                            currentCoderFile = filePath;
+                            updateCodeEditor(content);
+                            parseAndDisplayFunctions(content, filePath.split('.').pop());
+                            historyIndex = codeHistory.length - 1;
+                            chatHistory = []; // Reset chat history for new file
+                            currentFileDisplay.textContent = `Editing: ${filePath}`;
+                            saveFileBtn.disabled = false;
+                            auditButtons.forEach(btn => btn.disabled = false);
+                            closeModal(fileTreeModal);
+                        });
+                    }
+                });
+            });
+
+            saveFileBtn.addEventListener('click', async () => {
+                if (currentCoderFile) {
+                    const newContent = codeEditor.querySelector('code').textContent;
+                    const originalFile = fileMap.get(currentCoderFile);
+                    fileMap.set(currentCoderFile, new File([newContent], originalFile.name, { type: originalFile.type }));
+                    showStatusMessage(`'${currentCoderFile}' saved. Refreshing...`);
+                    await refreshEmulator();
+                }
+            });
+            
+            // --- Audit & Analysis Logic ---
+            const analysisModalContent = document.getElementById('analysis-modal-content');
+            const closeAnalysisModalBtn = document.getElementById('close-analysis-modal-btn');
+            
+            openAuditModalBtn.addEventListener('click', () => openModal(auditModal));
+            closeAuditModalBtn.addEventListener('click', () => closeModal(auditModal));
+            
+            const simpleMarkdownToHtml = (text) => text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>').replace(/`([^`]+)`/g, '<code>$1</code>').replace(/^- (.*$)/gm, '<ul><li>$1</li></ul>').replace(/<\/ul>\n<ul>/g, '').replace(/^(#+) (.*$)/gm, (m, h, c) => `<h${h.length+2}>${c}</h${h.length+2}>`).replace(/\n/g, '<br>');
+            
+            const showAnalysis = (content) => {
+                analysisModalContent.innerHTML = simpleMarkdownToHtml(content);
+                openModal(analysisModal);
+            };
+            
+            runAuditBtn.addEventListener('click', async () => {
+                const userPrompt = analysisPromptInput.value.trim();
+                if (fileMap.size === 0) { showStatusMessage('Please load a project first.'); return; }
+                if (!userPrompt) { showStatusMessage('Please describe what to audit.'); return; }
+                
+                closeModal(auditModal);
+                analysisModalContent.innerHTML = `<div class="flex flex-col items-center justify-center h-full"><div class="spinner"></div><p class="mt-4">Running custom audit...</p></div>`;
+                openModal(analysisModal);
+                
+                try {
+                    let systemPrompt, content, historyForApi = [];
+                    if (currentCoderFile) {
+                         content = await fileMap.get(currentCoderFile)?.text() || '';
+                         systemPrompt = `You are an expert code reviewer. Analyze the following code from '${currentCoderFile}' for the following user request: "${userPrompt}". Provide a concise report in Markdown format.`;
+                    } else {
+                        content = '';
+                        for (const [path, file] of fileMap.entries()) content += `--- FILE: ${path} ---\n\n${await file.text()}\n\n`;
+                        systemPrompt = `You are a Principal Software Architect. Conduct a comprehensive review of the provided project source code. The user's specific analysis request is: "${userPrompt}". Evaluate based on: Architectural Soundness, Code Quality, Functionality, and Usability/UX. Provide a detailed analysis in Markdown format.`;
+                    }
+                    historyForApi.push({role: 'user', parts: [{text: content}]})
+                    const report = await callGeminiAPI(systemPrompt, historyForApi, false);
+                    showAnalysis(report);
+                } catch (error) {
+                    showAnalysis(`<h3>Error during audit</h3><p>${error.message}</p>`);
+                }
+            });
+
+            auditButtons.forEach(button => button.addEventListener('click', async (e) => {
+                const analysisType = e.currentTarget.dataset.analysis;
+                if (!currentCoderFile) { showStatusMessage('Please select a file first.'); return; }
+                
+                closeModal(auditModal);
+                analysisModalContent.innerHTML = `<div class="flex flex-col items-center justify-center h-full"><div class="spinner"></div><p class="mt-4">Analyzing ${analysisType}...</p></div>`;
+                openModal(analysisModal);
+                try {
+                    const code = await fileMap.get(currentCoderFile)?.text() || '';
+                    const systemPrompt = `You are an expert code reviewer. Analyze the code from '${currentCoderFile}' specifically for ${analysisType}. Provide a concise report in Markdown format.`;
+                    const report = await callGeminiAPI(systemPrompt, [{role: 'user', parts: [{text: code}]}], false);
+                    showAnalysis(report);
+                } catch(error) {
+                    showAnalysis(`<h3>Error during analysis</h3><p>${error.message}</p>`);
+                }
+            }));
+
+            closeAnalysisModalBtn.addEventListener('click', () => closeModal(analysisModal));
+
+            // --- Settings Modal ---
+            const settingsBtn = document.getElementById('settings-btn');
+            const cancelSettingsBtn = document.getElementById('cancel-settings-btn');
+            const saveSettingsBtn = document.getElementById('save-settings-btn');
+            const apiKeyInput = document.getElementById('api-key-input');
+            settingsBtn.addEventListener('click', () => { apiKeyInput.value = localStorage.getItem('geminiApiKey') || ''; openModal(settingsModal); });
+            cancelSettingsBtn.addEventListener('click', () => closeModal(settingsModal));
+            saveSettingsBtn.addEventListener('click', () => { localStorage.setItem('geminiApiKey', apiKeyInput.value); closeModal(settingsModal); });
+
+            // --- Resizable Columns Logic ---
+            let isResizing = false;
+            resizer.addEventListener('mousedown', () => { isResizing = true; document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', () => { isResizing = false; document.removeEventListener('mousemove', handleMouseMove); }); });
+            function handleMouseMove(e) {
+                if (!isResizing) return;
+                const containerRect = coderView.getBoundingClientRect();
+                const newSidebarWidth = e.clientX - containerRect.left;
+                const newSidebarWidthPercent = (newSidebarWidth / containerRect.width) * 100;
+                if (newSidebarWidthPercent > 20 && newSidebarWidthPercent < 80) {
+                    coderSidebar.style.width = `${newSidebarWidthPercent}%`;
+                    mainCoderPanel.style.width = `${100 - newSidebarWidthPercent}%`;
+                }
+            }
+
+            // --- Function Parsing Logic ---
+            function parseAndDisplayFunctions(code, lang) {
+                functionList.innerHTML = '';
+                const functionRegex = /(?:function\s+([a-zA-Z0-9_]+)\s*\(|const\s+([a-zA-Z0-9_]+)\s*=\s*\(?\s*async\s*\)?\s*=>|const\s+([a-zA-Z0-9_]+)\s*=\s*\(.*\)\s*=>)/g;
+                const funcs = [...code.matchAll(functionRegex)].map(m => m[1] || m[2] || m[3]).filter(Boolean);
+                if (funcs.length > 0) {
+                    funcs.forEach(name => {
+                        const item = document.createElement('a');
+                        item.href = '#'; item.textContent = name; item.className = 'block text-sm p-1 rounded hover:bg-gray-700 code-font';
+                        item.onclick = (e) => { e.preventDefault(); scrollToFunction(name); };
+                        functionList.appendChild(item);
+                    });
+                } else {
+                    functionList.innerHTML = '<p class="text-xs text-gray-500">No functions found.</p>';
+                }
+            }
+            function scrollToFunction(functionName) { /* ... implementation omitted for brevity ... */ }
+        };
+        
+        // --- Central API Caller ---
+        async function callGeminiAPI(systemPrompt, conversationHistory, enableSearch) {
+            const apiKey = localStorage.getItem('geminiApiKey');
+            if (!apiKey) throw new Error('API Key not set in Settings.');
+            
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            
+            const payload = {
+                contents: conversationHistory,
+                systemInstruction: { parts: [{ text: systemPrompt }] }
+            };
+
+            if (enableSearch) {
+                payload.tools = [{ "google_search": {} }];
+            }
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errorBody = await response.json();
+                throw new Error(`API Error: ${errorBody.error?.message || response.statusText}`);
+            }
+
+            const result = await response.json();
+            const generatedText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!generatedText) throw new Error('API returned an empty response.');
+            return generatedText.replace(/```[\w\s-]*\n/g, '').replace(/```/g, '').trim();
+        }
+        
+        // --- INITIALIZER ---
+        async function main() {
+            const loadScript = (src) => new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src; script.crossOrigin = 'anonymous';
+                script.onload = resolve; script.onerror = () => reject(new Error(`Failed to load: ${src}`));
+                document.head.appendChild(script);
+            });
+
+            try {
+                log('Loading React dependencies...');
+                await loadScript('https://unpkg.com/react@17/umd/react.development.js');
+                await loadScript('https://unpkg.com/react-dom@17/umd/react-dom.development.js');
+                log('React dependencies loaded.', 'success');
+                setupPairCoder();
+                log('Pair Coder initialized.', 'success');
+                log('Please select a project to begin.');
+            } catch (err) {
+                log(err.message, 'error', err);
+            }
+        }
+        
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                allModals.forEach(modal => closeModal(modal));
+            }
+        });
+        
+        window.addEventListener('error', (event) => log(`Unhandled error: ${event.message}`, 'error', { filename: event.filename, lineno: event.lineno, error: event.error?.stack }));
+        window.addEventListener('unhandledrejection', (event) => log(`Unhandled promise rejection`, 'error', event.reason?.stack || event.reason));
+
+        main();
+
+    </script>
+</body>
+</html>
+
