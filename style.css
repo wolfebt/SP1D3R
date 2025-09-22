@@ -1,0 +1,174 @@
+body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
+        }
+        .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 4px solid #fff;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #static-site-frame {
+            border: none;
+            width: 100%;
+            height: 100%;
+        }
+        .file-tree-item {
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .file-tree-item:hover {
+            background-color: #2d3748;
+        }
+        .file-tree-children {
+            padding-left: 1.5rem;
+            border-left: 1px solid #4a5568;
+        }
+        .file-actions {
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .file-tree-item:hover .file-actions {
+            opacity: 1;
+        }
+        .action-btn {
+            padding: 4px;
+            border-radius: 4px;
+            color: #8b949e;
+        }
+        .action-btn:hover {
+            background-color: #30363d;
+            color: #c9d1d9;
+        }
+        /* Pair Coder Styles */
+        .code-font {
+            font-family: 'Source Code Pro', monospace;
+        }
+        .prompt-input, .code-output, .modal-content, .navigator-btn, .audit-input, #chat-input {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+        }
+        .prompt-input:focus, .audit-input:focus, #chat-input:focus {
+            outline: none;
+            border-color: #2f81f7;
+            box-shadow: 0 0 0 3px rgba(47, 129, 247, 0.4);
+        }
+        .submit-btn {
+            background-color: #238636;
+            color: white;
+            transition: background-color 0.2s;
+        }
+        .submit-btn:hover {
+            background-color: #2ea043;
+        }
+        .submit-btn:disabled {
+            background-color: #238636a1;
+            cursor: not-allowed;
+        }
+        .navigator-btn {
+            transition: background-color 0.2s;
+            color: #c9d1d9;
+        }
+        .navigator-btn:hover {
+            background-color: #21262d;
+        }
+        .navigator-btn:disabled {
+            background-color: #161b22;
+            color: #484f58;
+            cursor: not-allowed;
+        }
+        .settings-btn {
+            color: #8b949e;
+            transition: color 0.2s;
+        }
+        .settings-btn:hover {
+            color: #c9d1d9;
+        }
+        .tab-btn {
+            padding: 8px 16px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            color: #8b949e;
+        }
+        .tab-btn.active {
+            color: #c9d1d9;
+            border-bottom-color: #2f81f7;
+        }
+        /* Simple prose styles for analysis report */
+        .prose h3 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; }
+        .prose p { margin-bottom: 1rem; }
+        .prose ul { list-style-position: inside; margin-left: 1.25rem; margin-bottom: 1rem; }
+        .prose code { background-color: #2d3748; padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-size: 0.9em; }
+
+        /* Resizable columns */
+        .resizable-handle {
+            background-color: #30363d;
+            width: 8px;
+            cursor: col-resize;
+            flex-shrink: 0;
+        }
+        .resizable-handle:hover {
+            background-color: #2f81f7;
+        }
+
+        /* Chat UI Styles */
+        .chat-message.user {
+            background-color: #21262d;
+            align-self: flex-end;
+        }
+        .chat-message.ai {
+            background-color: #161b22;
+            align-self: flex-start;
+        }
+         #chat-history {
+            scrollbar-width: thin;
+            scrollbar-color: #4a5568 #161b22;
+        }
+
+        /* Diff view styles */
+        .diff-added { background-color: #1a3c2a; }
+        .diff-removed { background-color: #4d1c1c; }
+        .diff-line { display: block; white-space: pre-wrap; }
+
+        /* Editor Tabs */
+        .editor-tab {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            background-color: #21262d;
+            border-right: 1px solid #0d1117;
+            cursor: pointer;
+            color: #8b949e;
+            font-size: 0.875rem;
+        }
+        .editor-tab.active {
+            background-color: #161b22;
+            color: #c9d1d9;
+        }
+        .editor-tab:hover:not(.active) {
+            background-color: #2d3748;
+        }
+        .tab-close-btn {
+            margin-left: 12px;
+            padding: 2px;
+            border-radius: 50%;
+            line-height: 0.8;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+        .tab-close-btn:hover {
+            background-color: #484f58;
+            color: white;
+        }
