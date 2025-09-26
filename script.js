@@ -290,10 +290,63 @@
             log('Static site rendered.', 'success');
         }
 
+        let cdnModules = {};
+
+        async function loadDependenciesFromCDN(files) {
+            cdnModules = {}; // Reset
+            const packageJsonFile = findFile(files, ['package.json']);
+            if (!packageJsonFile) {
+                log('No package.json found. React projects may not work without dependencies.', 'warn');
+                // Manually add React as a fallback for projects without package.json
+                try {
+                    cdnModules['react'] = await import('https://esm.sh/react');
+                    cdnModules['react-dom'] = await import('https://esm.sh/react-dom');
+                    log('Loaded default React dependencies as a fallback.', 'info');
+                } catch(e) {
+                    log('Failed to load fallback React dependencies.', 'error', e);
+                }
+                return;
+            }
+            try {
+                const content = await files.get(packageJsonFile).text();
+                const packageJson = JSON.parse(content);
+                const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
+                log(`Found ${Object.keys(dependencies).length} dependencies in package.json.`, 'info');
+
+                const importPromises = Object.entries(dependencies).map(async ([name, version]) => {
+                    try {
+                        const moduleUrl = `https://esm.sh/${name}@${version}`;
+                        log(`Loading ${name}@${version} from ${moduleUrl}...`);
+                        cdnModules[name] = await import(moduleUrl);
+                        log(`Successfully loaded ${name}.`, 'success');
+                    } catch (e) {
+                        log(`Failed to load dependency ${name}@${version} from CDN. Trying without version.`, 'warn');
+                        try {
+                             const moduleUrl = `https://esm.sh/${name}`;
+                             log(`Loading ${name} from ${moduleUrl}...`);
+                             cdnModules[name] = await import(moduleUrl);
+                             log(`Successfully loaded ${name}.`, 'success');
+                        } catch (e2) {
+                             log(`Failed to load dependency ${name} from CDN.`, 'error', e2);
+                        }
+                    }
+                });
+
+                await Promise.all(importPromises);
+                log('Finished loading all CDN dependencies.', 'success');
+
+            } catch (e) {
+                log('Error processing package.json or loading dependencies.', 'error', e);
+            }
+        }
+
         async function emulateReactApp(files) {
             log('Starting React app emulation...');
             appRoot.style.display = 'block';
             appRoot.innerHTML = '<div id="root"></div>';
+
+            await loadDependenciesFromCDN(files);
+
             const entryPointPath = findEntryPoint(files);
             if (!entryPointPath) throw new Error('Could not find a suitable entry point (e.g., src/index.js).');
             await executeModule(entryPointPath, files);
@@ -331,15 +384,15 @@
             const dependencies = Array.from(new Set(Array.from(code.matchAll(/require\(['"]([^'"]+)['"]\)/g), m => m[1])));
             const dependencyExports = {};
             for (const dep of dependencies) {
-                if (['react', 'react-dom', 'react-dom/client'].includes(dep)) continue;
+                 if (cdnModules[dep]) continue; // Skip if it's a CDN module
                 const resolvedFile = findFile(files, [`${resolvePath(normalizedPath, `../${dep}`)}.js`, `${resolvePath(normalizedPath, `../${dep}`)}.jsx`, `${resolvePath(normalizedPath, `../${dep}`)}/index.js`]);
                 if (!resolvedFile) throw new Error(`Could not resolve dependency '${dep}' from '${normalizedPath}'`);
                 dependencyExports[dep] = await executeModule(resolvedFile, files, visited);
             }
             const exports = {}; const module = { exports };
-            const require = (dep) => {
-                if (dep === 'react') return window.React; if (dep === 'react-dom') return window.ReactDOM;
-                if (dep === 'react-dom/client') return { createRoot: (el) => ({ render: (app) => ReactDOM.render(app, el) }) };
+             const require = (dep) => {
+                if (cdnModules[dep]) return cdnModules[dep];
+                if (dep === 'react-dom/client') return { createRoot: (el) => ({ render: (app) => cdnModules['react-dom'].render(app, el) }) };
                 return dependencyExports[dep];
             };
             try {
@@ -1359,7 +1412,7 @@ ${fileContent}
             const apiKey = localStorage.getItem('geminiApiKey');
             if (!apiKey) throw new Error('API Key not set in Settings.');
 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
             const payload = {
                 contents: conversationHistory,
@@ -1397,11 +1450,6 @@ ${fileContent}
             });
 
             try {
-                log('Loading React dependencies...');
-                await loadScript('https://unpkg.com/react@17/umd/react.development.js');
-                await loadScript('https://unpkg.com/react-dom@17/umd/react-dom.development.js');
-                log('React dependencies loaded.', 'success');
-
                 log('Initializing virtual file system...');
                 fs = new LightningFS('fs');
                 pfs = fs.promises;
