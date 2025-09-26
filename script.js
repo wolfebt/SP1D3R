@@ -8,6 +8,18 @@
         const emulatorControls = document.getElementById('emulator-controls');
         const coderControls = document.getElementById('coder-controls');
 
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
         function switchToEmulator() {
             emulatorTabBtn.classList.add('active');
             coderTabBtn.classList.remove('active');
@@ -290,10 +302,63 @@
             log('Static site rendered.', 'success');
         }
 
+        let cdnModules = {};
+
+        async function loadDependenciesFromCDN(files) {
+            cdnModules = {}; // Reset
+            const packageJsonFile = findFile(files, ['package.json']);
+            if (!packageJsonFile) {
+                log('No package.json found. React projects may not work without dependencies.', 'warn');
+                // Manually add React as a fallback for projects without package.json
+                try {
+                    cdnModules['react'] = await import('https://esm.sh/react');
+                    cdnModules['react-dom'] = await import('https://esm.sh/react-dom');
+                    log('Loaded default React dependencies as a fallback.', 'info');
+                } catch(e) {
+                    log('Failed to load fallback React dependencies.', 'error', e);
+                }
+                return;
+            }
+            try {
+                const content = await files.get(packageJsonFile).text();
+                const packageJson = JSON.parse(content);
+                const dependencies = { ...packageJson.dependencies, ...packageJson.devDependencies };
+                log(`Found ${Object.keys(dependencies).length} dependencies in package.json.`, 'info');
+
+                const importPromises = Object.entries(dependencies).map(async ([name, version]) => {
+                    try {
+                        const moduleUrl = `https://esm.sh/${name}@${version}`;
+                        log(`Loading ${name}@${version} from ${moduleUrl}...`);
+                        cdnModules[name] = await import(moduleUrl);
+                        log(`Successfully loaded ${name}.`, 'success');
+                    } catch (e) {
+                        log(`Failed to load dependency ${name}@${version} from CDN. Trying without version.`, 'warn');
+                        try {
+                             const moduleUrl = `https://esm.sh/${name}`;
+                             log(`Loading ${name} from ${moduleUrl}...`);
+                             cdnModules[name] = await import(moduleUrl);
+                             log(`Successfully loaded ${name}.`, 'success');
+                        } catch (e2) {
+                             log(`Failed to load dependency ${name} from CDN.`, 'error', e2);
+                        }
+                    }
+                });
+
+                await Promise.all(importPromises);
+                log('Finished loading all CDN dependencies.', 'success');
+
+            } catch (e) {
+                log('Error processing package.json or loading dependencies.', 'error', e);
+            }
+        }
+
         async function emulateReactApp(files) {
             log('Starting React app emulation...');
             appRoot.style.display = 'block';
             appRoot.innerHTML = '<div id="root"></div>';
+
+            await loadDependenciesFromCDN(files);
+
             const entryPointPath = findEntryPoint(files);
             if (!entryPointPath) throw new Error('Could not find a suitable entry point (e.g., src/index.js).');
             await executeModule(entryPointPath, files);
@@ -331,15 +396,18 @@
             const dependencies = Array.from(new Set(Array.from(code.matchAll(/require\(['"]([^'"]+)['"]\)/g), m => m[1])));
             const dependencyExports = {};
             for (const dep of dependencies) {
-                if (['react', 'react-dom', 'react-dom/client'].includes(dep)) continue;
+                 if (cdnModules[dep]) continue; // Skip if it's a CDN module
                 const resolvedFile = findFile(files, [`${resolvePath(normalizedPath, `../${dep}`)}.js`, `${resolvePath(normalizedPath, `../${dep}`)}.jsx`, `${resolvePath(normalizedPath, `../${dep}`)}/index.js`]);
                 if (!resolvedFile) throw new Error(`Could not resolve dependency '${dep}' from '${normalizedPath}'`);
                 dependencyExports[dep] = await executeModule(resolvedFile, files, visited);
             }
             const exports = {}; const module = { exports };
-            const require = (dep) => {
-                if (dep === 'react') return window.React; if (dep === 'react-dom') return window.ReactDOM;
-                if (dep === 'react-dom/client') return { createRoot: (el) => ({ render: (app) => ReactDOM.render(app, el) }) };
+             const require = (dep) => {
+                if (cdnModules[dep]) return cdnModules[dep];
+                // Shim for modern React
+                if (dep === 'react-dom/client' && cdnModules['react-dom']) {
+                    return { createRoot: (el) => ({ render: (app) => cdnModules['react-dom'].render(app, el) }) };
+                }
                 return dependencyExports[dep];
             };
             try {
@@ -419,45 +487,55 @@
             }
         }
 
-        function deleteItem(path, isFolder) {
+        async function deleteItem(path, isFolder) {
             const itemType = isFolder ? 'folder' : 'file';
             const shortPath = path.split('/').pop();
             const confirmation = confirm(`Are you sure you want to delete the ${itemType} "${shortPath}"?\n\nThis cannot be undone.`);
 
             if (!confirmation) return;
 
-            if (isFolder) {
-                const keysToDelete = Array.from(fileMap.keys()).filter(key => key.startsWith(path + '/'));
-                if (fileMap.has(path)) keysToDelete.push(path);
+            const virtualPath = `/project/${path}`;
+            // Determine which files will be deleted to handle closing tabs later
+            const keysToDelete = isFolder
+                ? Array.from(fileMap.keys()).filter(key => key === path || key.startsWith(path + '/'))
+                : [path];
 
+            try {
+                // Perform the deletion on the virtual file system
+                if (isFolder) {
+                    await pfs.rm(virtualPath, { recursive: true });
+                } else {
+                    await pfs.unlink(virtualPath);
+                }
+
+                // Resync the in-memory state from the source of truth
+                await syncFileMapFromFS();
+
+                // Close any tabs that were open for the deleted files
                 keysToDelete.forEach(key => {
-                    if (currentCoderFile === key) clearEditorState();
-                    fileMap.delete(key);
+                    if (openTabs.includes(key)) {
+                        closeTab(key);
+                    }
                 });
-            } else {
-                if (currentCoderFile === path) clearEditorState();
-                fileMap.delete(path);
+
+                log(`Deleted ${itemType}: ${path}`, 'warn');
+                showStatusMessage(`Deleted '${shortPath}'`);
+                buildAndRenderFileTree(fileMap, currentOnFileClickCallback);
+                refreshGitStatus();
+
+            } catch (e) {
+                log(`Error deleting ${itemType} '${path}'.`, 'error', e);
+                alert(`Failed to delete: ${e.message}`);
             }
-
-            log(`Deleted ${itemType}: ${path}`, 'warn');
-            showStatusMessage(`Deleted '${shortPath}'`);
-
-            buildAndRenderFileTree(fileMap, currentOnFileClickCallback);
         }
 
-        function renameItem(path, isFolder) {
+        async function renameItem(path, isFolder) {
             const itemType = isFolder ? 'folder' : 'file';
             const oldName = path.split('/').pop();
             const newName = prompt(`Enter the new name for the ${itemType} "${oldName}":`, oldName);
 
-            if (!newName || newName.trim() === '' || newName === oldName) {
-                return;
-            }
-
-            if (newName.includes('/')) {
-                alert('Error: New name cannot contain a forward slash (/).');
-                return;
-            }
+            if (!newName || newName.trim() === '' || newName === oldName) return;
+            if (newName.includes('/')) { alert('Error: New name cannot contain a forward slash (/).'); return; }
 
             const parentPath = path.substring(0, path.lastIndexOf('/'));
             const newPath = parentPath ? `${parentPath}/${newName}` : newName;
@@ -467,36 +545,50 @@
                 return;
             }
 
-            if (isFolder) {
-                const filesToMove = Array.from(fileMap.entries()).filter(([key]) => key.startsWith(path + '/'));
-                if(fileMap.has(path)) filesToMove.push([path, fileMap.get(path)]);
+            const oldVirtualPath = `/project/${path}`;
+            const newVirtualPath = `/project/${newPath}`;
 
-                filesToMove.forEach(([oldKey, file]) => {
-                    const newKey = oldKey.replace(path, newPath);
-                    fileMap.set(newKey, file);
-                    fileMap.delete(oldKey);
-                    if (currentCoderFile === oldKey) {
-                        currentCoderFile = newKey;
-                        currentFileDisplay.textContent = `Editing: ${newKey}`;
+            // Keep track of old paths to update tabs later
+            const affectedOldPaths = isFolder
+                ? Array.from(fileMap.keys()).filter(key => key === path || key.startsWith(path + '/'))
+                : [path];
+
+            try {
+                // Perform the rename on the virtual file system
+                await pfs.rename(oldVirtualPath, newVirtualPath);
+
+                // Resync the in-memory state from the source of truth
+                await syncFileMapFromFS();
+
+                // Update open tabs and the current file being edited
+                const newOpenTabs = openTabs.map(oldTabPath => {
+                    if (affectedOldPaths.includes(oldTabPath)) {
+                        return oldTabPath.replace(path, newPath);
                     }
+                    return oldTabPath;
                 });
-            } else {
-                const file = fileMap.get(path);
-                fileMap.set(newPath, file);
-                fileMap.delete(path);
-                if (currentCoderFile === path) {
-                    currentCoderFile = newPath;
-                    currentFileDisplay.textContent = `Editing: ${newPath}`;
+                openTabs = newOpenTabs;
+
+                if (currentCoderFile && affectedOldPaths.includes(currentCoderFile)) {
+                    currentCoderFile = currentCoderFile.replace(path, newPath);
                 }
+
+                log(`Renamed ${itemType}: ${path} to ${newPath}`, 'info');
+                showStatusMessage(`Renamed to '${newName}'`);
+
+                // Refresh UI
+                if(currentCoderFile) currentFileDisplay.textContent = `Editing: ${currentCoderFile}`;
+                renderTabs();
+                buildAndRenderFileTree(fileMap, currentOnFileClickCallback);
+                refreshGitStatus();
+
+            } catch (e) {
+                log(`Error renaming ${itemType} '${path}'.`, 'error', e);
+                alert(`Failed to rename: ${e.message}`);
             }
-
-            log(`Renamed ${itemType}: ${path} to ${newPath}`, 'info');
-            showStatusMessage(`Renamed to '${newName}'`);
-
-            buildAndRenderFileTree(fileMap, currentOnFileClickCallback);
         }
 
-        function newFile() {
+        async function newFile() {
             const path = prompt("Enter the full path for the new file (e.g., 'src/components/Button.js'):", "new-file.js");
             if (!path || path.trim() === '') return;
 
@@ -505,31 +597,56 @@
                 return;
             }
 
-            const newFile = new File([""], path.split('/').pop(), { type: "text/plain" });
-            fileMap.set(path, newFile);
+            const virtualPath = `/project/${path}`;
+            const parentDir = virtualPath.substring(0, virtualPath.lastIndexOf('/'));
 
-            log(`Created new file: ${path}`, 'info');
-            showStatusMessage(`Created file '${path}'`);
-            buildAndRenderFileTree(fileMap, currentOnFileClickCallback);
+            try {
+                if (parentDir && parentDir !== '/project') {
+                    await pfs.mkdir(parentDir, { recursive: true });
+                }
+                await pfs.writeFile(virtualPath, '');
+
+                await syncFileMapFromFS();
+
+                log(`Created new file: ${path}`, 'info');
+                showStatusMessage(`Created file '${path}'`);
+                buildAndRenderFileTree(fileMap, currentOnFileClickCallback);
+                openFileInTab(path); // Open the new file for editing
+                refreshGitStatus();
+            } catch (e) {
+                log(`Error creating file '${path}' in virtual file system.`, 'error', e);
+                alert(`Failed to create file: ${e.message}`);
+            }
         }
 
-        function newFolder() {
+        async function newFolder() {
             const path = prompt("Enter the full path for the new folder (e.g., 'src/assets'):", "new-folder");
             if (!path || path.trim() === '') return;
 
             const placeholderPath = path.endsWith('/') ? `${path}.keep` : `${path}/.keep`;
-
             if (fileMap.has(path) || fileMap.has(placeholderPath) || Array.from(fileMap.keys()).some(key => key.startsWith(path + '/'))) {
                 alert(`Error: A folder at "${path}" already exists.`);
                 return;
             }
 
-            const newFile = new File([""], ".keep", { type: "text/plain" });
-            fileMap.set(placeholderPath, newFile);
+            const virtualPath = `/project/${path}`;
+            const virtualPlaceholderPath = `/project/${placeholderPath}`;
 
-            log(`Created new folder: ${path}`, 'info');
-            showStatusMessage(`Created folder '${path}'`);
-            buildAndRenderFileTree(fileMap, currentOnFileClickCallback);
+            try {
+                await pfs.mkdir(virtualPath, { recursive: true });
+                // Create a placeholder file to make the directory visible
+                await pfs.writeFile(virtualPlaceholderPath, '');
+
+                await syncFileMapFromFS();
+
+                log(`Created new folder: ${path}`, 'info');
+                showStatusMessage(`Created folder '${path}'`);
+                buildAndRenderFileTree(fileMap, currentOnFileClickCallback);
+                refreshGitStatus();
+            } catch (e) {
+                log(`Error creating folder '${path}' in virtual file system.`, 'error', e);
+                alert(`Failed to create folder: ${e.message}`);
+            }
         }
 
         async function downloadProjectZip() {
@@ -666,8 +783,34 @@
             const undoBtn = document.getElementById('undo-btn');
             const redoBtn = document.getElementById('redo-btn');
             const copyCodeBtn = document.getElementById('copy-code-btn');
+        const liveRefreshToggle = document.getElementById('live-refresh-toggle');
 
             let chatHistory = [];
+
+        async function handleLiveRefresh() {
+            if (!currentCoderFile || !monacoEditor || !liveRefreshToggle.checked) {
+                return;
+            }
+
+            const newContent = monacoEditor.getValue();
+            const virtualPath = `/project/${currentCoderFile}`;
+
+            try {
+                // Save the file content without showing a status message to keep the experience smooth
+                await pfs.writeFile(virtualPath, newContent);
+                await syncFileMapFromFS();
+
+                // Refresh the emulator to show the changes
+                await refreshEmulator();
+
+                // Refresh git status in the background
+                refreshGitStatus();
+
+            } catch (e) {
+                // Log errors silently to the console without alerting the user
+                log(`Error during live refresh for '${currentCoderFile}'.`, 'error', e);
+            }
+        }
 
             const autoResizeChatInput = () => {
                 chatInput.style.height = 'auto';
@@ -815,6 +958,10 @@ Full Project Source Code:\n${fullContext}`;
                     minimap: { enabled: false }
                 });
 
+                // --- Live Refresh Logic ---
+                const debouncedLiveRefresh = debounce(handleLiveRefresh, 750);
+                monacoEditor.onDidChangeModelContent(debouncedLiveRefresh);
+
                 // --- Re-bind event listeners that depend on the editor ---
                 chatForm.addEventListener('submit', handleChatSubmit);
                 copyCodeBtn.addEventListener('click', () => handleCopyClick(copyCodeBtn));
@@ -832,11 +979,22 @@ Full Project Source Code:\n${fullContext}`;
                 saveFileBtn.addEventListener('click', async () => {
                     if (currentCoderFile && monacoEditor) {
                         const newContent = monacoEditor.getValue();
-                        const originalFile = fileMap.get(currentCoderFile);
-                        fileMap.set(currentCoderFile, new File([newContent], originalFile.name, { type: originalFile.type }));
-                        showStatusMessage(`'${currentCoderFile}' saved.`);
-                        await refreshEmulator();
-                        refreshGitStatus();
+                        const virtualPath = `/project/${currentCoderFile}`;
+
+                        try {
+                            // Write the updated content to the virtual file system
+                            await pfs.writeFile(virtualPath, newContent);
+
+                            // Resync the file map to ensure it has the latest content
+                            await syncFileMapFromFS();
+
+                            showStatusMessage(`'${currentCoderFile}' saved.`);
+                            await refreshEmulator();
+                            refreshGitStatus();
+                        } catch (e) {
+                            log(`Error saving file '${currentCoderFile}'.`, 'error', e);
+                            alert(`Failed to save file: ${e.message}`);
+                        }
                     }
                 });
             });
@@ -906,18 +1064,30 @@ Full Project Source Code:\n${fullContext}`;
 
             log(`Applying ${currentChanges.length} refactoring changes...`, 'info');
 
-            for (const change of currentChanges) {
-                const originalFile = fileMap.get(change.filePath);
-                const newFile = new File([change.newContent], originalFile ? originalFile.name : change.filePath.split('/').pop(), { type: originalFile?.type || 'text/plain' });
-                fileMap.set(change.filePath, newFile);
-
-                if (currentCoderFile === change.filePath && monacoEditor) {
-                    monacoEditor.setValue(change.newContent);
+            try {
+                for (const change of currentChanges) {
+                    const virtualPath = `/project/${change.filePath}`;
+                    await pfs.writeFile(virtualPath, change.newContent);
                 }
+
+                await syncFileMapFromFS();
+
+                // Update the editor for any open files that were changed
+                for (const change of currentChanges) {
+                    if (currentCoderFile === change.filePath && monacoEditor) {
+                        monacoEditor.setValue(change.newContent);
+                    }
+                }
+
+                showStatusMessage('Refactoring complete! Refreshing emulator...');
+                await refreshEmulator();
+                refreshGitStatus();
+
+            } catch (e) {
+                 log(`Error applying refactoring changes.`, 'error', e);
+                 alert(`Failed to apply changes: ${e.message}`);
             }
 
-            showStatusMessage('Refactoring complete! Refreshing emulator...');
-            await refreshEmulator();
 
             closeModal(refactorReviewModal);
             currentChanges = [];
@@ -1061,6 +1231,61 @@ ${fileContent}
         const pushBtn = document.getElementById('push-btn');
         const gitLogList = document.getElementById('git-log-list');
         const gitRefreshBtn = document.getElementById('git-refresh-btn');
+        const currentBranchDisplay = document.getElementById('current-branch-display');
+        const branchSelect = document.getElementById('branch-select');
+        const switchBranchBtn = document.getElementById('switch-branch-btn');
+        const newBranchBtn = document.getElementById('new-branch-btn');
+        const gitDiffView = document.getElementById('git-diff-view');
+
+        async function showDiff(filepath) {
+            try {
+                gitDiffView.innerHTML = '<p class="text-gray-500">Loading diff...</p>';
+
+                if (typeof Diff === 'undefined') {
+                    gitDiffView.innerHTML = `<p class="text-red-400">Error: Diff library not loaded. Cannot show changes.</p>`;
+                    log('Diff library (jsdiff) is not available.', 'error');
+                    return;
+                }
+
+                let oldContent = '';
+                try {
+                    const commit = await git.resolveRef({ fs, dir: '/project', ref: 'HEAD' });
+                    const { blob } = await git.readBlob({ fs, dir: '/project', oid: commit, filepath });
+                    oldContent = new TextDecoder().decode(blob);
+                } catch (e) {
+                    log(`No version of '${filepath}' in HEAD. Assuming new file.`, 'info');
+                }
+
+                let newContent = '';
+                try {
+                     newContent = await pfs.readFile(`/project/${filepath}`, 'utf8');
+                } catch (e) {
+                    log(`No version of '${filepath}' in working directory. Assuming deleted file.`, 'info');
+                }
+
+                const diff = Diff.diffLines(oldContent, newContent);
+                const fragment = document.createDocumentFragment();
+
+                if (diff.length === 1 && !diff[0].added && !diff[0].removed) {
+                     fragment.appendChild(document.createTextNode('No changes to display for this file.'));
+                } else {
+                    diff.forEach((part) => {
+                        const span = document.createElement('span');
+                        const className = part.added ? 'diff-added' : part.removed ? 'diff-removed' : '';
+                        span.className = `diff-line ${className}`;
+                        span.appendChild(document.createTextNode(part.value));
+                        fragment.appendChild(span);
+                    });
+                }
+
+                gitDiffView.innerHTML = '';
+                gitDiffView.appendChild(fragment);
+
+            } catch (e) {
+                gitDiffView.innerHTML = `<p class="text-red-400">Error generating diff for ${filepath}.</p>`;
+                log(`Error generating diff for ${filepath}`, 'error', e);
+            }
+        }
 
         async function updateFilesInVS() {
             for (const [path, file] of fileMap.entries()) {
@@ -1076,6 +1301,7 @@ ${fileContent}
 
             if (changedFiles.length === 0) {
                 gitStatusList.innerHTML = '<p class="text-gray-500">No changes detected.</p>';
+                gitDiffView.innerHTML = '<p class="text-gray-500">No changes to display.</p>';
                 commitBtn.disabled = true;
                 return;
             }
@@ -1084,12 +1310,24 @@ ${fileContent}
                 const statusText = workdir === 0 ? 'new' : workdir === 2 ? 'modified' : 'deleted';
                 const isStaged = stage === 2;
                 const fileItem = document.createElement('div');
-                fileItem.className = 'flex justify-between items-center p-1 rounded-md';
-                fileItem.innerHTML = `
-                    <span class="truncate" title="${filepath}">${filepath} (${isStaged ? 'staged' : statusText})</span>
-                    <button class="navigator-btn text-xs px-2 py-1">${isStaged ? 'Unstage' : 'Stage'}</button>
-                `;
-                fileItem.querySelector('button').onclick = async () => {
+                fileItem.className = 'flex justify-between items-center p-1 rounded-md hover:bg-gray-700';
+
+                const fileNameSpan = document.createElement('span');
+                fileNameSpan.className = 'truncate cursor-pointer flex-grow';
+                fileNameSpan.title = filepath;
+                fileNameSpan.textContent = `${filepath} (${isStaged ? 'staged' : statusText})`;
+
+                const stageBtn = document.createElement('button');
+                stageBtn.className = 'navigator-btn text-xs px-2 py-1 flex-shrink-0 ml-2';
+                stageBtn.textContent = isStaged ? 'Unstage' : 'Stage';
+
+                fileItem.appendChild(fileNameSpan);
+                fileItem.appendChild(stageBtn);
+
+                fileNameSpan.onclick = () => showDiff(filepath);
+
+                stageBtn.onclick = async (e) => {
+                    e.stopPropagation();
                     if (isStaged) {
                         await git.remove({ fs, dir: '/project', filepath });
                     } else {
@@ -1117,6 +1355,39 @@ ${fileContent}
             }
         }
 
+        async function refreshBranchData() {
+            try {
+                const dir = '/project';
+                const currentBranch = await git.currentBranch({ fs, dir, fullname: false });
+                const branches = await git.listBranches({ fs, dir });
+
+                if (!currentBranch) {
+                    currentBranchDisplay.textContent = 'detached';
+                    currentBranchDisplay.title = 'HEAD is detached';
+                    document.getElementById('branch-management').style.display = 'none';
+                    return;
+                }
+
+                document.getElementById('branch-management').style.display = 'block';
+                currentBranchDisplay.textContent = currentBranch;
+                currentBranchDisplay.title = currentBranch;
+
+                branchSelect.innerHTML = '';
+                branches.forEach(branch => {
+                    const option = document.createElement('option');
+                    option.value = branch;
+                    option.textContent = branch;
+                    if (branch === currentBranch) {
+                        option.selected = true;
+                    }
+                    branchSelect.appendChild(option);
+                });
+            } catch (e) {
+                log('Could not refresh branch data.', 'warn');
+                document.getElementById('branch-management').style.display = 'none';
+            }
+        }
+
         commitBtn.addEventListener('click', async () => {
             const message = commitMessageInput.value;
             if (!message) {
@@ -1134,6 +1405,55 @@ ${fileContent}
             refreshGitLog();
             pushBtn.disabled = false;
         });
+
+        async function handleNewBranch() {
+            const newBranchName = prompt('Enter new branch name:');
+            if (!newBranchName || newBranchName.trim() === '') return;
+
+            try {
+                await git.branch({ fs, dir: '/project', ref: newBranchName });
+                await git.checkout({ fs, dir: '/project', ref: newBranchName });
+                await refreshBranchData();
+                await refreshGitStatus();
+                await refreshGitLog();
+                log(`Created and switched to new branch '${newBranchName}'.`, 'success');
+            } catch (e) {
+                log(`Error creating branch '${newBranchName}'.`, 'error', e);
+                alert(`Failed to create branch: ${e.message}`);
+            }
+        }
+
+        async function handleSwitchBranch() {
+            const selectedBranch = branchSelect.value;
+            if (!selectedBranch) return;
+
+            try {
+                await git.checkout({ fs, dir: '/project', ref: selectedBranch });
+                await refreshBranchData();
+                await syncFileMapFromFS();
+
+                const openTabsCopy = [...openTabs];
+                for (const tabPath of openTabsCopy) {
+                    if (!fileMap.has(tabPath)) {
+                        log(`File ${tabPath} does not exist in branch ${selectedBranch}. Closing tab.`, 'warn');
+                        closeTab(tabPath);
+                    } else {
+                        // Re-open the file to get the new content from the switched branch
+                        switchToTab(tabPath);
+                    }
+                }
+
+                await refreshGitStatus();
+                await refreshGitLog();
+                log(`Switched to branch '${selectedBranch}'.`, 'success');
+            } catch (e) {
+                log(`Error switching to branch '${selectedBranch}'.`, 'error', e);
+                alert(`Failed to switch branch: ${e.message}`);
+            }
+        }
+
+        newBranchBtn.addEventListener('click', handleNewBranch);
+        switchBranchBtn.addEventListener('click', handleSwitchBranch);
 
         async function pushToGitHub() {
             log('Pushing to remote repository...');
@@ -1165,27 +1485,37 @@ ${fileContent}
         }
 
         pushBtn.addEventListener('click', pushToGitHub);
-        gitRefreshBtn.addEventListener('click', refreshGitStatus);
+        gitRefreshBtn.addEventListener('click', () => {
+            refreshGitStatus();
+            refreshBranchData();
+        });
 
-        async function loadFilesFromFS(dir) {
-            fileMap.clear();
-            const walk = async (currentDir) => {
-                const entries = await pfs.readdir(currentDir);
-                for (const entry of entries) {
-                    const path = `${currentDir}/${entry}`;
-                    const stat = await pfs.stat(path);
-                    if (stat.isDirectory()) {
-                        await walk(path);
-                    } else {
-                        const content = await pfs.readFile(path);
-                        const relativePath = path.substring(dir.length + 1);
-                        const file = new File([content], entry, { type: 'text/plain' });
-                        fileMap.set(relativePath, file);
+        async function syncFileMapFromFS(dir = '/project') {
+            const newFileMap = new Map();
+            try {
+                const walk = async (currentDir) => {
+                    const entries = await pfs.readdir(currentDir);
+                    for (const entry of entries) {
+                        const path = `${currentDir}/${entry}`;
+                        const stat = await pfs.stat(path);
+                        if (stat.isDirectory()) {
+                            await walk(path);
+                        } else {
+                            const content = await pfs.readFile(path);
+                            const relativePath = path.substring(dir.length + 1);
+                            const file = new File([content], entry, { type: 'text/plain' });
+                            newFileMap.set(relativePath, file);
+                        }
                     }
-                }
-            };
-            await walk(dir);
-            log(`Loaded ${fileMap.size} files into the editor.`, 'success');
+                };
+                await walk(dir);
+                fileMap = newFileMap; // Replace the old map with the new one
+                log(`Synced ${fileMap.size} files from the virtual file system.`, 'info');
+            } catch (e) {
+                log('Error syncing file map from virtual file system.', 'error', e);
+                // In case of error, clear the file map to avoid inconsistent state
+                fileMap.clear();
+            }
         }
 
         async function cloneRepository() {
@@ -1215,7 +1545,7 @@ ${fileContent}
                 });
 
                 log('Clone successful. Reading files...', 'success');
-                await loadFilesFromFS(dir);
+                await syncFileMapFromFS(dir);
 
                 selectProjectBtn.classList.add('hidden');
                 document.getElementById('file-input').style.display = 'none';
@@ -1232,6 +1562,7 @@ ${fileContent}
 
                 refreshGitStatus();
                 refreshGitLog();
+                refreshBranchData();
 
             } catch (e) {
                 log(`Error cloning repository: ${e.message}`, 'error', e);
@@ -1359,7 +1690,7 @@ ${fileContent}
             const apiKey = localStorage.getItem('geminiApiKey');
             if (!apiKey) throw new Error('API Key not set in Settings.');
 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
 
             const payload = {
                 contents: conversationHistory,
@@ -1388,6 +1719,53 @@ ${fileContent}
         }
 
         // --- INITIALIZER ---
+        async function loadExistingProject() {
+            const dir = '/project';
+            try {
+                const files = await pfs.readdir(dir);
+                if (files.length === 0) {
+                    log('No existing project found in virtual file system.');
+                    log('Please select a project to begin.');
+                    return;
+                }
+
+                log('Existing project found. Loading files...');
+                loadingState.style.display = 'flex';
+                instructions.style.display = 'none';
+
+                await syncFileMapFromFS(dir);
+
+                selectProjectBtn.classList.add('hidden');
+                document.getElementById('file-input').style.display = 'none';
+                viewFilesBtn.classList.remove('hidden');
+                resetBtn.classList.remove('hidden');
+                document.getElementById('download-zip-btn').classList.remove('hidden');
+                selectFileBtn.disabled = false;
+                runAuditBtn.disabled = false;
+                openAuditModalBtn.disabled = false;
+
+                if (fileMap.has('README.md')) {
+                    openFileInTab('README.md');
+                } else if (fileMap.size > 0) {
+                    openFileInTab(Array.from(fileMap.keys())[0]);
+                }
+
+                currentProjectType = detectProjectType(fileMap);
+                log(`Auto-detected project type: ${currentProjectType.toUpperCase()}`);
+                await refreshEmulator();
+                refreshGitStatus();
+                refreshGitLog();
+                refreshBranchData();
+                log('Project loaded successfully.', 'success');
+
+            } catch (e) {
+                log('No project directory found. Ready for first-time use.', 'info');
+                log('Please select a project to begin.');
+            } finally {
+                 loadingState.style.display = 'none';
+            }
+        }
+
         async function main() {
             const loadScript = (src) => new Promise((resolve, reject) => {
                 const script = document.createElement('script');
@@ -1397,11 +1775,6 @@ ${fileContent}
             });
 
             try {
-                log('Loading React dependencies...');
-                await loadScript('https://unpkg.com/react@17/umd/react.development.js');
-                await loadScript('https://unpkg.com/react-dom@17/umd/react-dom.development.js');
-                log('React dependencies loaded.', 'success');
-
                 log('Initializing virtual file system...');
                 fs = new LightningFS('fs');
                 pfs = fs.promises;
@@ -1410,11 +1783,10 @@ ${fileContent}
 
                 setupPairCoder();
                 log('Pair Coder initialized.', 'success');
-                log('Please select a project to begin.');
+                await loadExistingProject();
             } catch (err) {
                 log(err.message, 'error', err);
             }
-        }
 
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
