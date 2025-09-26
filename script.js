@@ -8,6 +8,18 @@
         const emulatorControls = document.getElementById('emulator-controls');
         const coderControls = document.getElementById('coder-controls');
 
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
         function switchToEmulator() {
             emulatorTabBtn.classList.add('active');
             coderTabBtn.classList.remove('active');
@@ -392,7 +404,10 @@
             const exports = {}; const module = { exports };
              const require = (dep) => {
                 if (cdnModules[dep]) return cdnModules[dep];
-                if (dep === 'react-dom/client') return { createRoot: (el) => ({ render: (app) => cdnModules['react-dom'].render(app, el) }) };
+                // Shim for modern React
+                if (dep === 'react-dom/client' && cdnModules['react-dom']) {
+                    return { createRoot: (el) => ({ render: (app) => cdnModules['react-dom'].render(app, el) }) };
+                }
                 return dependencyExports[dep];
             };
             try {
@@ -768,8 +783,34 @@
             const undoBtn = document.getElementById('undo-btn');
             const redoBtn = document.getElementById('redo-btn');
             const copyCodeBtn = document.getElementById('copy-code-btn');
+        const liveRefreshToggle = document.getElementById('live-refresh-toggle');
 
             let chatHistory = [];
+
+        async function handleLiveRefresh() {
+            if (!currentCoderFile || !monacoEditor || !liveRefreshToggle.checked) {
+                return;
+            }
+
+            const newContent = monacoEditor.getValue();
+            const virtualPath = `/project/${currentCoderFile}`;
+
+            try {
+                // Save the file content without showing a status message to keep the experience smooth
+                await pfs.writeFile(virtualPath, newContent);
+                await syncFileMapFromFS();
+
+                // Refresh the emulator to show the changes
+                await refreshEmulator();
+
+                // Refresh git status in the background
+                refreshGitStatus();
+
+            } catch (e) {
+                // Log errors silently to the console without alerting the user
+                log(`Error during live refresh for '${currentCoderFile}'.`, 'error', e);
+            }
+        }
 
             const autoResizeChatInput = () => {
                 chatInput.style.height = 'auto';
@@ -916,6 +957,10 @@ Full Project Source Code:\n${fullContext}`;
                     scrollBeyondLastLine: false,
                     minimap: { enabled: false }
                 });
+
+                // --- Live Refresh Logic ---
+                const debouncedLiveRefresh = debounce(handleLiveRefresh, 750);
+                monacoEditor.onDidChangeModelContent(debouncedLiveRefresh);
 
                 // --- Re-bind event listeners that depend on the editor ---
                 chatForm.addEventListener('submit', handleChatSubmit);

@@ -216,6 +216,11 @@
                             <p id="current-file-display" class="text-xs text-gray-500 code-font">No file selected.</p>
                         </div>
                         <div class="flex items-center gap-2 flex-wrap">
+                            <label for="live-refresh-toggle" class="flex items-center text-sm cursor-pointer pr-2" title="Automatically refresh the emulator on code change">
+                                <input type="checkbox" id="live-refresh-toggle" class="form-checkbox h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500" checked>
+                                <span class="ml-2 text-gray-300">Live Refresh</span>
+                            </label>
+                            <div class="border-l h-5 border-gray-600"></div>
                             <button id="generate-tests-btn" class="navigator-btn px-3 py-1 rounded-md text-sm" disabled>Generate Tests</button>
                             <button id="copy-code-btn" class="navigator-btn px-3 py-1 rounded-md text-sm">Copy</button>
                             <button id="select-file-btn" class="navigator-btn px-3 py-1 rounded-md text-sm" disabled>Select File</button>
