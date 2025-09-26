@@ -1064,18 +1064,30 @@ Full Project Source Code:\n${fullContext}`;
 
             log(`Applying ${currentChanges.length} refactoring changes...`, 'info');
 
-            for (const change of currentChanges) {
-                const originalFile = fileMap.get(change.filePath);
-                const newFile = new File([change.newContent], originalFile ? originalFile.name : change.filePath.split('/').pop(), { type: originalFile?.type || 'text/plain' });
-                fileMap.set(change.filePath, newFile);
-
-                if (currentCoderFile === change.filePath && monacoEditor) {
-                    monacoEditor.setValue(change.newContent);
+            try {
+                for (const change of currentChanges) {
+                    const virtualPath = `/project/${change.filePath}`;
+                    await pfs.writeFile(virtualPath, change.newContent);
                 }
+
+                await syncFileMapFromFS();
+
+                // Update the editor for any open files that were changed
+                for (const change of currentChanges) {
+                    if (currentCoderFile === change.filePath && monacoEditor) {
+                        monacoEditor.setValue(change.newContent);
+                    }
+                }
+
+                showStatusMessage('Refactoring complete! Refreshing emulator...');
+                await refreshEmulator();
+                refreshGitStatus();
+
+            } catch (e) {
+                 log(`Error applying refactoring changes.`, 'error', e);
+                 alert(`Failed to apply changes: ${e.message}`);
             }
 
-            showStatusMessage('Refactoring complete! Refreshing emulator...');
-            await refreshEmulator();
 
             closeModal(refactorReviewModal);
             currentChanges = [];
