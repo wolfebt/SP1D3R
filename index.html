@@ -243,22 +243,45 @@
                     </div>
                     <button id="clone-repo-btn" class="submit-btn w-full px-4 py-2 rounded-md mb-4 text-sm">Clone Repository</button>
                     
+                    <div id="branch-management" class="mb-4">
+                        <h4 class="font-semibold mb-2">Branch</h4>
+                        <div class="flex items-center gap-2 mb-2">
+                            <span id="current-branch-display" class="code-font bg-gray-900 px-2 py-1 rounded-md text-sm truncate">master</span>
+                            <select id="branch-select" class="audit-input w-full text-sm rounded-md"></select>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                             <button id="switch-branch-btn" class="navigator-btn px-4 py-2 rounded-md text-sm">Switch</button>
+                             <button id="new-branch-btn" class="navigator-btn px-4 py-2 rounded-md text-sm">New Branch</button>
+                        </div>
+                    </div>
+
                     <h4 class="font-semibold mt-4 mb-2">Changes</h4>
                     <div id="git-status-list" class="flex flex-col gap-1">
                         <p class="text-gray-500">No changes detected.</p>
                     </div>
                 </div>
-                <div class="w-2/3 pl-4 flex flex-col">
-                     <h3 class="text-lg font-semibold mb-2">Commit</h3>
-                     <textarea id="commit-message-input" class="audit-input w-full p-2 text-sm rounded-lg mb-2 code-font" placeholder="Commit message" rows="4"></textarea>
-                     <div class="flex justify-end items-center gap-4">
-                        <button id="commit-btn" class="submit-btn px-4 py-2 rounded-md text-sm" disabled>Commit</button>
-                        <button id="push-btn" class="navigator-btn px-4 py-2 rounded-md text-sm" disabled>Push</button>
-                     </div>
-                     <h3 class="text-lg font-semibold mt-6 mb-2">History</h3>
-                     <div id="git-log-list" class="flex-grow overflow-y-auto code-font bg-gray-900 rounded-lg p-2">
-                         <p class="text-gray-500">No commits to show.</p>
-                     </div>
+                <div class="w-2/3 pl-4 flex flex-col h-full">
+                    <!-- Diff view takes most of the space -->
+                    <div class="flex-grow flex flex-col min-h-0">
+                        <h3 class="text-lg font-semibold mb-2">Changes</h3>
+                        <div id="git-diff-view" class="flex-grow overflow-y-auto code-font bg-gray-900 rounded-lg p-2 border border-gray-700">
+                            <p class="text-gray-500">Select a file from the 'Changes' list to see differences.</p>
+                        </div>
+                    </div>
+
+                    <!-- Commit and history at the bottom -->
+                    <div class="flex-shrink-0 pt-4">
+                        <h3 class="text-lg font-semibold mb-2">Commit</h3>
+                        <textarea id="commit-message-input" class="audit-input w-full p-2 text-sm rounded-lg mb-2 code-font" placeholder="Commit message" rows="3"></textarea>
+                        <div class="flex justify-end items-center gap-4">
+                            <button id="commit-btn" class="submit-btn px-4 py-2 rounded-md text-sm" disabled>Commit</button>
+                            <button id="push-btn" class="navigator-btn px-4 py-2 rounded-md text-sm" disabled>Push</button>
+                        </div>
+                        <h3 class="text-lg font-semibold mt-4 mb-2">History</h3>
+                        <div id="git-log-list" class="overflow-y-auto code-font bg-gray-900 rounded-lg p-2 h-48 border border-gray-700">
+                            <p class="text-gray-500">No commits to show.</p>
+                        </div>
+                    </div>
                 </div>
             </main>
         </div>

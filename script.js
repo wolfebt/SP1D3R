@@ -1174,6 +1174,61 @@ ${fileContent}
         const pushBtn = document.getElementById('push-btn');
         const gitLogList = document.getElementById('git-log-list');
         const gitRefreshBtn = document.getElementById('git-refresh-btn');
+        const currentBranchDisplay = document.getElementById('current-branch-display');
+        const branchSelect = document.getElementById('branch-select');
+        const switchBranchBtn = document.getElementById('switch-branch-btn');
+        const newBranchBtn = document.getElementById('new-branch-btn');
+        const gitDiffView = document.getElementById('git-diff-view');
+
+        async function showDiff(filepath) {
+            try {
+                gitDiffView.innerHTML = '<p class="text-gray-500">Loading diff...</p>';
+
+                if (typeof Diff === 'undefined') {
+                    gitDiffView.innerHTML = `<p class="text-red-400">Error: Diff library not loaded. Cannot show changes.</p>`;
+                    log('Diff library (jsdiff) is not available.', 'error');
+                    return;
+                }
+
+                let oldContent = '';
+                try {
+                    const commit = await git.resolveRef({ fs, dir: '/project', ref: 'HEAD' });
+                    const { blob } = await git.readBlob({ fs, dir: '/project', oid: commit, filepath });
+                    oldContent = new TextDecoder().decode(blob);
+                } catch (e) {
+                    log(`No version of '${filepath}' in HEAD. Assuming new file.`, 'info');
+                }
+
+                let newContent = '';
+                try {
+                     newContent = await pfs.readFile(`/project/${filepath}`, 'utf8');
+                } catch (e) {
+                    log(`No version of '${filepath}' in working directory. Assuming deleted file.`, 'info');
+                }
+
+                const diff = Diff.diffLines(oldContent, newContent);
+                const fragment = document.createDocumentFragment();
+
+                if (diff.length === 1 && !diff[0].added && !diff[0].removed) {
+                     fragment.appendChild(document.createTextNode('No changes to display for this file.'));
+                } else {
+                    diff.forEach((part) => {
+                        const span = document.createElement('span');
+                        const className = part.added ? 'diff-added' : part.removed ? 'diff-removed' : '';
+                        span.className = `diff-line ${className}`;
+                        span.appendChild(document.createTextNode(part.value));
+                        fragment.appendChild(span);
+                    });
+                }
+
+                gitDiffView.innerHTML = '';
+                gitDiffView.appendChild(fragment);
+
+            } catch (e) {
+                gitDiffView.innerHTML = `<p class="text-red-400">Error generating diff for ${filepath}.</p>`;
+                log(`Error generating diff for ${filepath}`, 'error', e);
+            }
+        }
 
         async function updateFilesInVS() {
             for (const [path, file] of fileMap.entries()) {
@@ -1189,6 +1244,7 @@ ${fileContent}
 
             if (changedFiles.length === 0) {
                 gitStatusList.innerHTML = '<p class="text-gray-500">No changes detected.</p>';
+                gitDiffView.innerHTML = '<p class="text-gray-500">No changes to display.</p>';
                 commitBtn.disabled = true;
                 return;
             }
@@ -1197,12 +1253,24 @@ ${fileContent}
                 const statusText = workdir === 0 ? 'new' : workdir === 2 ? 'modified' : 'deleted';
                 const isStaged = stage === 2;
                 const fileItem = document.createElement('div');
-                fileItem.className = 'flex justify-between items-center p-1 rounded-md';
-                fileItem.innerHTML = `
-                    <span class="truncate" title="${filepath}">${filepath} (${isStaged ? 'staged' : statusText})</span>
-                    <button class="navigator-btn text-xs px-2 py-1">${isStaged ? 'Unstage' : 'Stage'}</button>
-                `;
-                fileItem.querySelector('button').onclick = async () => {
+                fileItem.className = 'flex justify-between items-center p-1 rounded-md hover:bg-gray-700';
+
+                const fileNameSpan = document.createElement('span');
+                fileNameSpan.className = 'truncate cursor-pointer flex-grow';
+                fileNameSpan.title = filepath;
+                fileNameSpan.textContent = `${filepath} (${isStaged ? 'staged' : statusText})`;
+
+                const stageBtn = document.createElement('button');
+                stageBtn.className = 'navigator-btn text-xs px-2 py-1 flex-shrink-0 ml-2';
+                stageBtn.textContent = isStaged ? 'Unstage' : 'Stage';
+
+                fileItem.appendChild(fileNameSpan);
+                fileItem.appendChild(stageBtn);
+
+                fileNameSpan.onclick = () => showDiff(filepath);
+
+                stageBtn.onclick = async (e) => {
+                    e.stopPropagation();
                     if (isStaged) {
                         await git.remove({ fs, dir: '/project', filepath });
                     } else {
@@ -1230,6 +1298,39 @@ ${fileContent}
             }
         }
 
+        async function refreshBranchData() {
+            try {
+                const dir = '/project';
+                const currentBranch = await git.currentBranch({ fs, dir, fullname: false });
+                const branches = await git.listBranches({ fs, dir });
+
+                if (!currentBranch) {
+                    currentBranchDisplay.textContent = 'detached';
+                    currentBranchDisplay.title = 'HEAD is detached';
+                    document.getElementById('branch-management').style.display = 'none';
+                    return;
+                }
+
+                document.getElementById('branch-management').style.display = 'block';
+                currentBranchDisplay.textContent = currentBranch;
+                currentBranchDisplay.title = currentBranch;
+
+                branchSelect.innerHTML = '';
+                branches.forEach(branch => {
+                    const option = document.createElement('option');
+                    option.value = branch;
+                    option.textContent = branch;
+                    if (branch === currentBranch) {
+                        option.selected = true;
+                    }
+                    branchSelect.appendChild(option);
+                });
+            } catch (e) {
+                log('Could not refresh branch data.', 'warn');
+                document.getElementById('branch-management').style.display = 'none';
+            }
+        }
+
         commitBtn.addEventListener('click', async () => {
             const message = commitMessageInput.value;
             if (!message) {
@@ -1247,6 +1348,55 @@ ${fileContent}
             refreshGitLog();
             pushBtn.disabled = false;
         });
+
+        async function handleNewBranch() {
+            const newBranchName = prompt('Enter new branch name:');
+            if (!newBranchName || newBranchName.trim() === '') return;
+
+            try {
+                await git.branch({ fs, dir: '/project', ref: newBranchName });
+                await git.checkout({ fs, dir: '/project', ref: newBranchName });
+                await refreshBranchData();
+                await refreshGitStatus();
+                await refreshGitLog();
+                log(`Created and switched to new branch '${newBranchName}'.`, 'success');
+            } catch (e) {
+                log(`Error creating branch '${newBranchName}'.`, 'error', e);
+                alert(`Failed to create branch: ${e.message}`);
+            }
+        }
+
+        async function handleSwitchBranch() {
+            const selectedBranch = branchSelect.value;
+            if (!selectedBranch) return;
+
+            try {
+                await git.checkout({ fs, dir: '/project', ref: selectedBranch });
+                await refreshBranchData();
+                await syncFileMapFromFS();
+
+                const openTabsCopy = [...openTabs];
+                for (const tabPath of openTabsCopy) {
+                    if (!fileMap.has(tabPath)) {
+                        log(`File ${tabPath} does not exist in branch ${selectedBranch}. Closing tab.`, 'warn');
+                        closeTab(tabPath);
+                    } else {
+                        // Re-open the file to get the new content from the switched branch
+                        switchToTab(tabPath);
+                    }
+                }
+
+                await refreshGitStatus();
+                await refreshGitLog();
+                log(`Switched to branch '${selectedBranch}'.`, 'success');
+            } catch (e) {
+                log(`Error switching to branch '${selectedBranch}'.`, 'error', e);
+                alert(`Failed to switch branch: ${e.message}`);
+            }
+        }
+
+        newBranchBtn.addEventListener('click', handleNewBranch);
+        switchBranchBtn.addEventListener('click', handleSwitchBranch);
 
         async function pushToGitHub() {
             log('Pushing to remote repository...');
@@ -1278,7 +1428,10 @@ ${fileContent}
         }
 
         pushBtn.addEventListener('click', pushToGitHub);
-        gitRefreshBtn.addEventListener('click', refreshGitStatus);
+        gitRefreshBtn.addEventListener('click', () => {
+            refreshGitStatus();
+            refreshBranchData();
+        });
 
         async function syncFileMapFromFS(dir = '/project') {
             const newFileMap = new Map();
@@ -1352,6 +1505,7 @@ ${fileContent}
 
                 refreshGitStatus();
                 refreshGitLog();
+                refreshBranchData();
 
             } catch (e) {
                 log(`Error cloning repository: ${e.message}`, 'error', e);
@@ -1544,6 +1698,7 @@ ${fileContent}
                 await refreshEmulator();
                 refreshGitStatus();
                 refreshGitLog();
+                refreshBranchData();
                 log('Project loaded successfully.', 'success');
 
             } catch (e) {
