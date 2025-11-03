@@ -11,6 +11,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script>
     <script src="https://unpkg.com/@isomorphic-git/lightning-fs"></script>
     <script src="https://unpkg.com/isomorphic-git"></script>
+    <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -133,6 +134,7 @@
                     <button id="emulator-tab-btn" class="tab-btn active">Web Emulator</button>
                     <button id="coder-tab-btn" class="tab-btn">Pair Coder</button>
                     <button id="source-control-tab-btn" class="tab-btn">Source Control</button>
+                    <button id="scraper-tab-btn" class="tab-btn">Scraper</button>
                 </div>
             </div>
             <div id="emulator-controls" class="flex items-center space-x-4">
@@ -234,6 +236,22 @@
                             <!-- Tabs will be dynamically added here -->
                         </div>
                         <div id="code-editor" class="code-font w-full text-sm flex-grow bg-gray-900 overflow-hidden"></div>
+                    </div>
+                </div>
+            </main>
+
+            <main id="scraper-view" class="hidden h-full flex flex-col p-4 text-sm">
+                <div class="flex items-center mb-4">
+                    <input type="text" id="scraper-url-input" class="prompt-input w-full p-2 rounded-md" placeholder="Enter a URL to scrape...">
+                    <button id="scrape-btn" class="submit-btn px-4 py-2 rounded-md ml-2">Scrape</button>
+                </div>
+                <div class="flex-grow flex flex-col overflow-hidden rounded-lg border border-[#30363d]">
+                    <div id="scraper-output" class="p-4 overflow-y-auto font-mono text-sm flex-grow bg-gray-900">
+                        <p class="text-gray-500">Scraped content will appear here...</p>
+                    </div>
+                     <div id="scraper-editor-container" class="w-full text-sm flex-grow bg-gray-900 overflow-hidden" style="display: none;"></div>
+                    <div class="p-2 border-t border-gray-700 flex justify-end">
+                        <button id="save-markdown-btn" class="navigator-btn px-4 py-2 rounded-md">Save as Markdown</button>
                     </div>
                 </div>
             </main>

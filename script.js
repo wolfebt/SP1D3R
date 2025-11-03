@@ -2,9 +2,11 @@
         const emulatorTabBtn = document.getElementById('emulator-tab-btn');
         const coderTabBtn = document.getElementById('coder-tab-btn');
         const sourceControlTabBtn = document.getElementById('source-control-tab-btn');
+        const scraperTabBtn = document.getElementById('scraper-tab-btn');
         const emulatorView = document.getElementById('emulator-view');
         const coderView = document.getElementById('coder-view');
         const sourceControlView = document.getElementById('source-control-view');
+        const scraperView = document.getElementById('scraper-view');
         const emulatorControls = document.getElementById('emulator-controls');
         const coderControls = document.getElementById('coder-controls');
 
@@ -24,9 +26,11 @@
             emulatorTabBtn.classList.add('active');
             coderTabBtn.classList.remove('active');
             sourceControlTabBtn.classList.remove('active');
+            scraperTabBtn.classList.remove('active');
             emulatorView.classList.remove('hidden');
             coderView.classList.add('hidden');
             sourceControlView.classList.add('hidden');
+            scraperView.classList.add('hidden');
             emulatorControls.classList.remove('hidden'); emulatorControls.classList.add('flex');
             coderControls.classList.add('hidden');
         }
@@ -34,9 +38,11 @@
             coderTabBtn.classList.add('active');
             emulatorTabBtn.classList.remove('active');
             sourceControlTabBtn.classList.remove('active');
+            scraperTabBtn.classList.remove('active');
             coderView.classList.remove('hidden'); coderView.classList.add('flex');
             emulatorView.classList.add('hidden');
             sourceControlView.classList.add('hidden');
+            scraperView.classList.add('hidden');
             coderControls.classList.remove('hidden'); coderControls.classList.add('flex');
             emulatorControls.classList.add('hidden'); emulatorControls.classList.remove('flex');
         }
@@ -44,16 +50,36 @@
             sourceControlTabBtn.classList.add('active');
             emulatorTabBtn.classList.remove('active');
             coderTabBtn.classList.remove('active');
+            scraperTabBtn.classList.remove('active');
             sourceControlView.classList.remove('hidden'); sourceControlView.classList.add('flex');
             emulatorView.classList.add('hidden');
             coderView.classList.add('hidden');
+            scraperView.classList.add('hidden');
             // Hide both sets of controls for this tab
             emulatorControls.classList.add('hidden'); emulatorControls.classList.remove('flex');
             coderControls.classList.add('hidden'); coderControls.classList.remove('flex');
         }
+        function switchToScraper() {
+            console.log("switchToScraper called!");
+            scraperTabBtn.classList.add('active');
+            emulatorTabBtn.classList.remove('active');
+            coderTabBtn.classList.remove('active');
+            sourceControlTabBtn.classList.remove('active');
+            scraperView.classList.remove('hidden');
+            scraperView.classList.add('flex');
+            emulatorView.classList.add('hidden');
+            coderView.classList.add('hidden');
+            sourceControlView.classList.add('hidden');
+            // Hide both sets of controls for this tab
+            emulatorControls.classList.add('hidden');
+            emulatorControls.classList.remove('flex');
+            coderControls.classList.add('hidden');
+            coderControls.classList.remove('flex');
+        }
         emulatorTabBtn.addEventListener('click', switchToEmulator);
         coderTabBtn.addEventListener('click', switchToCoder);
         sourceControlTabBtn.addEventListener('click', switchToSourceControl);
+        scraperTabBtn.addEventListener('click', switchToScraper);
 
         // --- DOM Elements ---
         const fileInput = document.getElementById('file-input');
@@ -1796,5 +1822,108 @@ ${fileContent}
 
         window.addEventListener('error', (event) => log(`Unhandled error: ${event.message}`, 'error', { filename: event.filename, lineno: event.lineno, error: event.error?.stack }));
         window.addEventListener('unhandledrejection', (event) => log(`Unhandled promise rejection`, 'error', event.reason?.stack || event.reason));
+
+        // --- SCRAPER SCRIPT ---
+        const scraperUrlInput = document.getElementById('scraper-url-input');
+        const scrapeBtn = document.getElementById('scrape-btn');
+        const scraperOutput = document.getElementById('scraper-output');
+        const scraperEditorContainer = document.getElementById('scraper-editor-container');
+        const saveMarkdownBtn = document.getElementById('save-markdown-btn');
+        let scraperEditor = null;
+
+        async function scrapeUrl() {
+            const url = scraperUrlInput.value.trim();
+            if (!url) {
+                scraperOutput.innerHTML = '<p class="text-red-400">Please enter a URL.</p>';
+                return;
+            }
+
+            scraperOutput.innerHTML = '<p class="text-gray-500">Scraping...</p>';
+
+            try {
+                const proxyUrl = `https://cors.isomorphic-git.org/${url}`;
+                const response = await fetch(proxyUrl);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
+                }
+
+                const html = await response.text();
+                const turndownService = new TurndownService();
+                const markdown = turndownService.turndown(html);
+
+                if (scraperEditor) {
+                    scraperOutput.style.display = 'none';
+                    scraperEditorContainer.style.display = 'block';
+                    scraperEditor.setValue(markdown);
+                } else {
+                    // Fallback to text area if editor isn't ready
+                    scraperOutput.textContent = markdown;
+                }
+
+            } catch (error) {
+                scraperOutput.innerHTML = `<p class="text-red-400">Error: ${error.message}</p><p class="text-xs text-gray-500 whitespace-pre-wrap">${error.stack}</p>`;
+            }
+        }
+
+        scrapeBtn.addEventListener('click', scrapeUrl);
+        saveMarkdownBtn.addEventListener('click', saveMarkdown);
+
+        function saveMarkdown() {
+            if (!scraperEditor) {
+                alert('No content to save.');
+                return;
+            }
+
+            const markdown = scraperEditor.getValue();
+            const url = scraperUrlInput.value.trim();
+            const filename = url.replace(/(^\w+:|^)\/\//, '').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `${filename}.md`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+
+        function initializeScraperEditor() {
+            if (scraperEditor) return;
+            require(['vs/editor/editor.main'], function() {
+                scraperEditor = monaco.editor.create(scraperEditorContainer, {
+                    value: '',
+                    language: 'markdown',
+                    theme: 'vs-dark',
+                    automaticLayout: true,
+                    fontFamily: "'Source Code Pro', monospace",
+                    backgroundColor: '#161b22',
+                    scrollBeyondLastLine: false,
+                    minimap: { enabled: false }
+                });
+            });
+        }
+
+        async function main() {
+            const loadScript = (src) => new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = src; script.crossOrigin = 'anonymous';
+                script.onload = resolve; script.onerror = () => reject(new Error(`Failed to load: ${src}`));
+                document.head.appendChild(script);
+            });
+
+            try {
+                log('Initializing virtual file system...');
+                fs = new LightningFS('fs');
+                pfs = fs.promises;
+                git.plugins.set('fs', fs);
+                log('Virtual file system ready.', 'success');
+
+                setupPairCoder();
+                initializeScraperEditor();
+                log('Pair Coder initialized.', 'success');
+                await loadExistingProject();
+            } catch (err) {
+                log(err.message, 'error', err);
+            }
+        }
 
         main();
