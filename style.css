@@ -172,3 +172,6 @@ body {
             background-color: #484f58;
             color: white;
         }
+        #scraper-view.flex {
+            display: flex !important;
+        }

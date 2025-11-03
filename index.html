@@ -11,6 +11,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script>
     <script src="https://unpkg.com/@isomorphic-git/lightning-fs"></script>
     <script src="https://unpkg.com/isomorphic-git"></script>
+    <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -79,13 +80,34 @@
     </div>
     
     <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-75 z-[60] hidden items-center justify-center p-4">
-        <div class="modal-content p-8 rounded-lg w-full max-w-md">
-            <h2 class="text-xl font-bold mb-4">Settings</h2>
-            <label for="api-key-input" class="block mb-2 text-sm font-medium text-gray-400">Gemini API Key</label>
-            <input type="password" id="api-key-input" class="prompt-input w-full p-2 rounded-md mb-2">
-            <label for="github-pat-input" class="block mb-2 text-sm font-medium text-gray-400">GitHub Personal Access Token</label>
-            <input type="password" id="github-pat-input" class="prompt-input w-full p-2 rounded-md mb-4">
-            <div class="flex justify-end gap-4">
+        <div class="modal-content p-8 rounded-lg w-full max-w-lg">
+            <h2 class="text-xl font-bold mb-6">Settings</h2>
+
+            <div class="space-y-4">
+                <div>
+                    <label for="api-key-input" class="block mb-1 text-sm font-medium text-gray-300">Gemini API Key</label>
+                    <input type="password" id="api-key-input" class="prompt-input w-full p-2 rounded-md">
+                </div>
+                <div>
+                    <label for="github-pat-input" class="block mb-1 text-sm font-medium text-gray-300">GitHub Personal Access Token</label>
+                    <input type="password" id="github-pat-input" class="prompt-input w-full p-2 rounded-md">
+                </div>
+
+                <div class="pt-4 border-t border-gray-700">
+                    <label for="chrome-debug-url-input" class="block mb-1 text-sm font-medium text-gray-300">Chrome Debugging URL</label>
+                    <input type="text" id="chrome-debug-url-input" class="prompt-input w-full p-2 rounded-md" placeholder="ws://localhost:9222">
+                    <div id="chrome-debug-help" class="mt-2 text-xs text-gray-400 p-3 bg-gray-800 rounded-md">
+                        <p class="font-semibold mb-1">How to enable for Dynamic Scraping:</p>
+                        <p>1. Close all running instances of Google Chrome.</p>
+                        <p>2. Launch Chrome from your terminal with the debugging flag:</p>
+                        <p class="mt-1"><strong class="text-gray-300">macOS:</strong><br><code class="code-font text-blue-400">/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222</code></p>
+                        <p class="mt-1"><strong class="text-gray-300">Windows:</strong><br><code class="code-font text-blue-400">"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222</code></p>
+                        <p class="mt-2">Keep the terminal window open while you scrape.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-4 mt-6">
                 <button id="cancel-settings-btn" class="navigator-btn px-4 py-2 rounded-md">Cancel</button>
                 <button id="save-settings-btn" class="submit-btn px-4 py-2 rounded-md">Save</button>
             </div>
@@ -133,6 +155,7 @@
                     <button id="emulator-tab-btn" class="tab-btn active">Web Emulator</button>
                     <button id="coder-tab-btn" class="tab-btn">Pair Coder</button>
                     <button id="source-control-tab-btn" class="tab-btn">Source Control</button>
+                    <button id="scraper-tab-btn" class="tab-btn">Scraper</button>
                 </div>
             </div>
             <div id="emulator-controls" class="flex items-center space-x-4">
@@ -234,6 +257,60 @@
                             <!-- Tabs will be dynamically added here -->
                         </div>
                         <div id="code-editor" class="code-font w-full text-sm flex-grow bg-gray-900 overflow-hidden"></div>
+                    </div>
+                </div>
+            </main>
+
+            <main id="scraper-view" class="hidden h-full flex overflow-hidden p-4 text-sm gap-4">
+                <!-- Left Panel: Scraper Configuration -->
+                <div class="flex flex-col w-1/3 min-w-[300px] bg-gray-800 p-4 rounded-lg border border-gray-700">
+                    <h3 class="text-lg font-semibold mb-4 text-white">Scraper Configuration</h3>
+
+                    <!-- Scrape Mode -->
+                    <div class="mb-4">
+                        <label class="block mb-2 text-sm font-medium text-gray-400">Scrape Mode</label>
+                        <div class="flex gap-2 rounded-md bg-gray-900 p-1">
+                            <button id="scrape-mode-static" class="flex-1 text-center text-sm py-1 rounded-md transition-colors bg-blue-600 text-white">Static</button>
+                            <button id="scrape-mode-dynamic" class="flex-1 text-center text-sm py-1 rounded-md transition-colors hover:bg-gray-700">Dynamic</button>
+                        </div>
+                    </div>
+
+                    <!-- URL Input -->
+                    <div class="mb-4">
+                        <label for="scraper-url-input" class="block mb-2 text-sm font-medium text-gray-400">Target URL</label>
+                        <input type="text" id="scraper-url-input" class="prompt-input w-full p-2 rounded-md" placeholder="https://example.com">
+                    </div>
+
+                    <!-- Data Extractors (Dynamic Mode Only) -->
+                    <div id="dynamic-scraper-options" class="hidden flex-grow flex flex-col overflow-hidden">
+                         <h4 class="font-semibold text-gray-300 mb-2">Data Extractors</h4>
+                         <div id="extractor-list" class="flex-grow overflow-y-auto mb-4 border border-gray-700 rounded-md p-2 space-y-2 bg-gray-900">
+                            <!-- Extractor items will be added here -->
+                             <p class="text-xs text-gray-500 text-center">No extractors defined.</p>
+                         </div>
+                         <form id="add-extractor-form" class="flex items-center gap-2">
+                             <input type="text" id="extractor-name-input" class="audit-input w-1/3 p-2 text-sm rounded-lg" placeholder="Name">
+                             <input type="text" id="extractor-selector-input" class="audit-input w-2/3 p-2 text-sm rounded-lg" placeholder="CSS Selector or XPath">
+                             <button type="submit" class="submit-btn p-2 rounded-md" title="Add Extractor">
+                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                             </button>
+                         </form>
+                    </div>
+
+                    <!-- Scrape Button -->
+                    <div class="mt-auto pt-4 border-t border-gray-700">
+                        <button id="scrape-btn" class="submit-btn w-full px-4 py-2 rounded-md font-bold">Scrape</button>
+                    </div>
+                </div>
+
+                <!-- Right Panel: Output -->
+                <div class="flex flex-col flex-grow overflow-hidden rounded-lg border border-[#30363d]">
+                    <div id="scraper-output-container" class="w-full h-full text-sm flex-grow bg-gray-900 overflow-hidden">
+                        <!-- Monaco editor for output will be initialized here -->
+                         <div id="scraper-placeholder" class="p-4 font-mono text-sm text-gray-500">Scraped content will appear here...</div>
+                    </div>
+                    <div class="p-2 border-t border-gray-700 flex justify-end">
+                        <button id="save-scraped-data-btn" class="navigator-btn px-4 py-2 rounded-md">Save as Markdown</button>
                     </div>
                 </div>
             </main>

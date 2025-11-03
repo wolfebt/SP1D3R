@@ -2,9 +2,11 @@
         const emulatorTabBtn = document.getElementById('emulator-tab-btn');
         const coderTabBtn = document.getElementById('coder-tab-btn');
         const sourceControlTabBtn = document.getElementById('source-control-tab-btn');
+        const scraperTabBtn = document.getElementById('scraper-tab-btn');
         const emulatorView = document.getElementById('emulator-view');
         const coderView = document.getElementById('coder-view');
         const sourceControlView = document.getElementById('source-control-view');
+        const scraperView = document.getElementById('scraper-view');
         const emulatorControls = document.getElementById('emulator-controls');
         const coderControls = document.getElementById('coder-controls');
 
@@ -24,9 +26,11 @@
             emulatorTabBtn.classList.add('active');
             coderTabBtn.classList.remove('active');
             sourceControlTabBtn.classList.remove('active');
+            scraperTabBtn.classList.remove('active');
             emulatorView.classList.remove('hidden');
             coderView.classList.add('hidden');
             sourceControlView.classList.add('hidden');
+            scraperView.classList.add('hidden');
             emulatorControls.classList.remove('hidden'); emulatorControls.classList.add('flex');
             coderControls.classList.add('hidden');
         }
@@ -34,9 +38,11 @@
             coderTabBtn.classList.add('active');
             emulatorTabBtn.classList.remove('active');
             sourceControlTabBtn.classList.remove('active');
+            scraperTabBtn.classList.remove('active');
             coderView.classList.remove('hidden'); coderView.classList.add('flex');
             emulatorView.classList.add('hidden');
             sourceControlView.classList.add('hidden');
+            scraperView.classList.add('hidden');
             coderControls.classList.remove('hidden'); coderControls.classList.add('flex');
             emulatorControls.classList.add('hidden'); emulatorControls.classList.remove('flex');
         }
@@ -44,16 +50,38 @@
             sourceControlTabBtn.classList.add('active');
             emulatorTabBtn.classList.remove('active');
             coderTabBtn.classList.remove('active');
+            scraperTabBtn.classList.remove('active');
             sourceControlView.classList.remove('hidden'); sourceControlView.classList.add('flex');
             emulatorView.classList.add('hidden');
             coderView.classList.add('hidden');
+            scraperView.classList.add('hidden');
             // Hide both sets of controls for this tab
             emulatorControls.classList.add('hidden'); emulatorControls.classList.remove('flex');
             coderControls.classList.add('hidden'); coderControls.classList.remove('flex');
         }
+        function switchToScraper() {
+            scraperTabBtn.classList.add('active');
+            emulatorTabBtn.classList.remove('active');
+            coderTabBtn.classList.remove('active');
+            sourceControlTabBtn.classList.remove('active');
+
+            scraperView.classList.remove('hidden');
+            scraperView.classList.add('flex'); // It's a flex container
+
+            emulatorView.classList.add('hidden');
+            coderView.classList.add('hidden');
+            sourceControlView.classList.add('hidden');
+
+            // Hide both sets of controls for this tab
+            emulatorControls.classList.add('hidden');
+            emulatorControls.classList.remove('flex');
+            coderControls.classList.add('hidden');
+            coderControls.classList.remove('flex');
+        }
         emulatorTabBtn.addEventListener('click', switchToEmulator);
         coderTabBtn.addEventListener('click', switchToCoder);
         sourceControlTabBtn.addEventListener('click', switchToSourceControl);
+        scraperTabBtn.addEventListener('click', switchToScraper);
 
         // --- DOM Elements ---
         const fileInput = document.getElementById('file-input');
@@ -1640,15 +1668,19 @@ ${fileContent}
             const saveSettingsBtn = document.getElementById('save-settings-btn');
             const apiKeyInput = document.getElementById('api-key-input');
             const githubPatInput = document.getElementById('github-pat-input');
+            const chromeDebugUrlInput = document.getElementById('chrome-debug-url-input');
+
             settingsBtn.addEventListener('click', () => {
                 apiKeyInput.value = localStorage.getItem('geminiApiKey') || '';
                 githubPatInput.value = localStorage.getItem('githubPat') || '';
+                chromeDebugUrlInput.value = localStorage.getItem('chromeDebugUrl') || '';
                 openModal(settingsModal);
             });
             cancelSettingsBtn.addEventListener('click', () => closeModal(settingsModal));
             saveSettingsBtn.addEventListener('click', () => {
                 localStorage.setItem('geminiApiKey', apiKeyInput.value);
                 localStorage.setItem('githubPat', githubPatInput.value);
+                localStorage.setItem('chromeDebugUrl', chromeDebugUrlInput.value);
                 closeModal(settingsModal);
             });
 
@@ -1718,6 +1750,277 @@ ${fileContent}
             return generatedText.replace(/```[\w\s-]*\n/g, '').replace(/```/g, '').trim();
         }
 
+        // --- SCRAPER SCRIPT ---
+        const scraperUrlInput = document.getElementById('scraper-url-input');
+        const scrapeBtn = document.getElementById('scrape-btn');
+        const saveScrapedDataBtn = document.getElementById('save-scraped-data-btn');
+        const scraperOutputContainer = document.getElementById('scraper-output-container');
+        const scraperPlaceholder = document.getElementById('scraper-placeholder');
+        const scrapeModeStaticBtn = document.getElementById('scrape-mode-static');
+        const scrapeModeDynamicBtn = document.getElementById('scrape-mode-dynamic');
+        const dynamicScraperOptions = document.getElementById('dynamic-scraper-options');
+        const extractorList = document.getElementById('extractor-list');
+        const addExtractorForm = document.getElementById('add-extractor-form');
+        const extractorNameInput = document.getElementById('extractor-name-input');
+        const extractorSelectorInput = document.getElementById('extractor-selector-input');
+
+        let scraperEditor = null;
+        let currentScrapeMode = 'static';
+        let extractors = [];
+
+        function setScrapeMode(mode) {
+            currentScrapeMode = mode;
+            if (mode === 'static') {
+                scrapeModeStaticBtn.classList.add('bg-blue-600', 'text-white');
+                scrapeModeStaticBtn.classList.remove('hover:bg-gray-700');
+                scrapeModeDynamicBtn.classList.remove('bg-blue-600', 'text-white');
+                scrapeModeDynamicBtn.classList.add('hover:bg-gray-700');
+                dynamicScraperOptions.classList.add('hidden');
+                saveScrapedDataBtn.textContent = 'Save as Markdown';
+            } else {
+                scrapeModeDynamicBtn.classList.add('bg-blue-600', 'text-white');
+                scrapeModeDynamicBtn.classList.remove('hover:bg-gray-700');
+                scrapeModeStaticBtn.classList.remove('bg-blue-600', 'text-white');
+                scrapeModeStaticBtn.classList.add('hover:bg-gray-700');
+                dynamicScraperOptions.classList.remove('hidden');
+                dynamicScraperOptions.classList.add('flex');
+                saveScrapedDataBtn.textContent = 'Save as JSON';
+            }
+             // Clear output when switching modes
+            if (scraperEditor) scraperEditor.setValue('');
+        }
+
+        scrapeModeStaticBtn.addEventListener('click', () => setScrapeMode('static'));
+        scrapeModeDynamicBtn.addEventListener('click', () => setScrapeMode('dynamic'));
+
+        function renderExtractors() {
+            extractorList.innerHTML = '';
+            if (extractors.length === 0) {
+                extractorList.innerHTML = '<p class="text-xs text-gray-500 text-center">No extractors defined.</p>';
+                return;
+            }
+            extractors.forEach((extractor, index) => {
+                const item = document.createElement('div');
+                item.className = 'flex items-center justify-between bg-gray-800 p-2 rounded-md';
+                item.innerHTML = `
+                    <div class="flex-grow">
+                        <p class="font-semibold text-sm text-gray-300">${extractor.name}</p>
+                        <p class="text-xs text-gray-500 code-font truncate">${extractor.selector}</p>
+                    </div>
+                    <button data-index="${index}" class="remove-extractor-btn action-btn flex-shrink-0 ml-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>`;
+                extractorList.appendChild(item);
+            });
+
+            document.querySelectorAll('.remove-extractor-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const index = parseInt(e.currentTarget.dataset.index, 10);
+                    extractors.splice(index, 1);
+                    renderExtractors();
+                });
+            });
+        }
+
+        addExtractorForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = extractorNameInput.value.trim();
+            const selector = extractorSelectorInput.value.trim();
+            if (name && selector) {
+                extractors.push({ name, selector });
+                extractorNameInput.value = '';
+                extractorSelectorInput.value = '';
+                renderExtractors();
+            }
+        });
+
+        async function scrapeUrl() {
+            const url = scraperUrlInput.value.trim();
+            if (!url) {
+                if(scraperEditor) scraperEditor.setValue(JSON.stringify({ error: "Please enter a URL." }, null, 2));
+                return;
+            }
+
+            initializeScraperEditor();
+            scraperEditor.setValue('Scraping...');
+
+
+            if (currentScrapeMode === 'static') {
+                await staticScrape(url);
+            } else {
+                await dynamicScrape(url);
+            }
+        }
+
+        async function staticScrape(url) {
+             try {
+                const proxyUrl = `https://cors.isomorphic-git.org/${url}`;
+                const response = await fetch(proxyUrl);
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
+                }
+
+                const html = await response.text();
+                const turndownService = new TurndownService();
+                const markdown = turndownService.turndown(html);
+
+                scraperEditor.setValue(markdown);
+                monaco.editor.setModelLanguage(scraperEditor.getModel(), 'markdown');
+
+            } catch (error) {
+                scraperEditor.setValue(`Error: ${error.message}\n\n${error.stack}`);
+            }
+        }
+
+        async function dynamicScrape(url) {
+            monaco.editor.setModelLanguage(scraperEditor.getModel(), 'json');
+
+            if (extractors.length === 0) {
+                scraperEditor.setValue(JSON.stringify({ error: "Please define at least one data extractor for dynamic scraping." }, null, 2));
+                return;
+            }
+
+            const debugUrl = localStorage.getItem('chromeDebugUrl') || 'ws://localhost:9222';
+
+            scraperEditor.setValue(JSON.stringify({ status: `Connecting to Chrome at ${debugUrl}...` }, null, 2));
+
+            try {
+                // 1. Get a list of available pages (tabs)
+                const response = await fetch(`http://${new URL(debugUrl).host}/json/new`);
+                const page = await response.json();
+                const webSocketUrl = page.webSocketDebuggerUrl;
+
+                // 2. Connect to the new page via WebSocket
+                const ws = new WebSocket(webSocketUrl);
+
+                await new Promise((resolve, reject) => {
+                    ws.onopen = resolve;
+                    ws.onerror = (err) => reject(new Error("Failed to connect to the Chrome debugger WebSocket."));
+                });
+
+                let messageId = 0;
+                const commands = new Map();
+
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    if (commands.has(data.id)) {
+                        const { resolve, reject } = commands.get(data.id);
+                        if (data.error) {
+                            reject(new Error(data.error.message));
+                        } else {
+                            resolve(data.result);
+                        }
+                        commands.delete(data.id);
+                    }
+                };
+
+                const sendCommand = (method, params = {}) => {
+                    const id = ++messageId;
+                    return new Promise((resolve, reject) => {
+                        commands.set(id, { resolve, reject });
+                        ws.send(JSON.stringify({ id, method, params }));
+                    });
+                };
+
+                scraperEditor.setValue(JSON.stringify({ status: `Navigating to ${url}...` }, null, 2));
+
+                // 3. Enable required domains and navigate
+                await sendCommand('Page.enable');
+                await sendCommand('DOM.enable');
+                await sendCommand('Runtime.enable');
+                await sendCommand('Page.navigate', { url });
+
+                // 4. Wait for the page to fully load
+                await new Promise(resolve => {
+                    const listener = (event) => {
+                        const data = JSON.parse(event.data);
+                        if (data.method === 'Page.loadEventFired') {
+                            ws.removeEventListener('message', listener);
+                            resolve();
+                        }
+                    };
+                    ws.addEventListener('message', listener);
+                });
+
+                scraperEditor.setValue(JSON.stringify({ status: `Page loaded. Extracting data...` }, null, 2));
+
+                // 5. Extract data using selectors
+                const results = {};
+                for (const extractor of extractors) {
+                    try {
+                        const expression = `
+                            Array.from(document.querySelectorAll('${extractor.selector}')).map(el => el.innerText || el.textContent);
+                        `;
+                        const result = await sendCommand('Runtime.evaluate', { expression });
+                        results[extractor.name] = result.result.value;
+                    } catch (e) {
+                        results[extractor.name] = { error: `Could not evaluate selector: ${e.message}` };
+                    }
+                }
+
+                // 6. Display results and close the tab
+                scraperEditor.setValue(JSON.stringify(results, null, 2));
+                await sendCommand('Page.close');
+                ws.close();
+
+            } catch (error) {
+                scraperEditor.setValue(JSON.stringify({
+                    error: `Dynamic scraping failed: ${error.message}`,
+                    troubleshooting: "Please ensure Chrome is running with the remote debugging flag and the URL in Settings is correct."
+                }, null, 2));
+            }
+        }
+
+
+        scrapeBtn.addEventListener('click', scrapeUrl);
+        saveScrapedDataBtn.addEventListener('click', saveScrapedData);
+
+        function saveScrapedData() {
+            if (!scraperEditor || !scraperEditor.getValue()) {
+                alert('No content to save.');
+                return;
+            }
+
+            const content = scraperEditor.getValue();
+            const url = scraperUrlInput.value.trim();
+            const filename = url.replace(/(^\w+:|^)\/\//, '').replace(/[^a-z0-9]/gi, '_').toLowerCase() || 'scraped_data';
+
+            let blob, downloadFilename;
+
+            if (currentScrapeMode === 'static') {
+                blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+                downloadFilename = `${filename}.md`;
+            } else {
+                blob = new Blob([content], { type: 'application/json;charset=utf-8' });
+                downloadFilename = `${filename}.json`;
+            }
+
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = downloadFilename;
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+
+        function initializeScraperEditor() {
+            if (scraperEditor) return;
+            scraperPlaceholder.style.display = 'none';
+            require(['vs/editor/editor.main'], function() {
+                scraperEditor = monaco.editor.create(scraperOutputContainer, {
+                    value: 'Scraped content will appear here...',
+                    language: 'markdown',
+                    theme: 'vs-dark',
+                    automaticLayout: true,
+                    fontFamily: "'Source Code Pro', monospace",
+                    backgroundColor: '#161b22',
+                    scrollBeyondLastLine: false,
+                    minimap: { enabled: false },
+                    wordWrap: 'on'
+                });
+            });
+        }
+
         // --- INITIALIZER ---
         async function loadExistingProject() {
             const dir = '/project';
@@ -1767,13 +2070,6 @@ ${fileContent}
         }
 
         async function main() {
-            const loadScript = (src) => new Promise((resolve, reject) => {
-                const script = document.createElement('script');
-                script.src = src; script.crossOrigin = 'anonymous';
-                script.onload = resolve; script.onerror = () => reject(new Error(`Failed to load: ${src}`));
-                document.head.appendChild(script);
-            });
-
             try {
                 log('Initializing virtual file system...');
                 fs = new LightningFS('fs');
@@ -1782,11 +2078,13 @@ ${fileContent}
                 log('Virtual file system ready.', 'success');
 
                 setupPairCoder();
+                initializeScraperEditor();
                 log('Pair Coder initialized.', 'success');
                 await loadExistingProject();
             } catch (err) {
                 log(err.message, 'error', err);
             }
+        }
 
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
