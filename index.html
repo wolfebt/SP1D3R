@@ -281,20 +281,26 @@
                         <input type="text" id="scraper-url-input" class="prompt-input w-full p-2 rounded-md" placeholder="https://example.com">
                     </div>
 
-                    <!-- Data Extractors (Dynamic Mode Only) -->
-                    <div id="dynamic-scraper-options" class="hidden flex-grow flex flex-col overflow-hidden">
-                         <h4 class="font-semibold text-gray-300 mb-2">Data Extractors</h4>
-                         <div id="extractor-list" class="flex-grow overflow-y-auto mb-4 border border-gray-700 rounded-md p-2 space-y-2 bg-gray-900">
-                            <!-- Extractor items will be added here -->
-                             <p class="text-xs text-gray-500 text-center">No extractors defined.</p>
-                         </div>
-                         <form id="add-extractor-form" class="flex items-center gap-2">
-                             <input type="text" id="extractor-name-input" class="audit-input w-1/3 p-2 text-sm rounded-lg" placeholder="Name">
-                             <input type="text" id="extractor-selector-input" class="audit-input w-2/3 p-2 text-sm rounded-lg" placeholder="CSS Selector or XPath">
-                             <button type="submit" class="submit-btn p-2 rounded-md" title="Add Extractor">
-                                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                             </button>
-                         </form>
+                    <!-- Accordion for CSS Selectors -->
+                    <div id="css-selector-accordion" class="flex-grow flex flex-col overflow-hidden">
+                        <button id="accordion-header" class="w-full flex justify-between items-center p-2 rounded-md bg-gray-700 hover:bg-gray-600">
+                            <h4 class="font-semibold text-gray-300">CSS Selectors</h4>
+                            <svg id="accordion-arrow" class="w-4 h-4 text-gray-400 transition-transform" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+                        <div id="accordion-content" class="hidden mt-2 flex-grow flex flex-col overflow-hidden">
+                            <div id="extractor-list" class="flex-grow overflow-y-auto mb-4 border border-gray-700 rounded-md p-2 space-y-2 bg-gray-900">
+                                <p class="text-xs text-gray-500 text-center">No selectors defined.</p>
+                            </div>
+                            <form id="add-extractor-form" class="flex items-center gap-2">
+                                <input type="text" id="extractor-name-input" class="audit-input w-1/3 p-2 text-sm rounded-lg" placeholder="Name">
+                                <input type="text" id="extractor-selector-input" class="audit-input w-2/3 p-2 text-sm rounded-lg" placeholder="CSS Selector">
+                                <button type="submit" class="submit-btn p-2 rounded-md" title="Add Selector">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                </button>
+                            </form>
+                        </div>
                     </div>
 
                     <!-- Scrape Button -->

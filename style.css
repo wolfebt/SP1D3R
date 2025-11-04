@@ -175,3 +175,7 @@ body {
         #scraper-view.flex {
             display: flex !important;
         }
+
+        #accordion-arrow.rotate-180 {
+            transform: rotate(180deg);
+        }

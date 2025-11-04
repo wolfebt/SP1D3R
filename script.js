@@ -1758,7 +1758,7 @@ ${fileContent}
         const scraperPlaceholder = document.getElementById('scraper-placeholder');
         const scrapeModeStaticBtn = document.getElementById('scrape-mode-static');
         const scrapeModeDynamicBtn = document.getElementById('scrape-mode-dynamic');
-        const dynamicScraperOptions = document.getElementById('dynamic-scraper-options');
+        const cssSelectorAccordion = document.getElementById('css-selector-accordion');
         const extractorList = document.getElementById('extractor-list');
         const addExtractorForm = document.getElementById('add-extractor-form');
         const extractorNameInput = document.getElementById('extractor-name-input');
@@ -1775,15 +1775,14 @@ ${fileContent}
                 scrapeModeStaticBtn.classList.remove('hover:bg-gray-700');
                 scrapeModeDynamicBtn.classList.remove('bg-blue-600', 'text-white');
                 scrapeModeDynamicBtn.classList.add('hover:bg-gray-700');
-                dynamicScraperOptions.classList.add('hidden');
+                cssSelectorAccordion.classList.add('hidden');
                 saveScrapedDataBtn.textContent = 'Save as Markdown';
             } else {
                 scrapeModeDynamicBtn.classList.add('bg-blue-600', 'text-white');
                 scrapeModeDynamicBtn.classList.remove('hover:bg-gray-700');
                 scrapeModeStaticBtn.classList.remove('bg-blue-600', 'text-white');
                 scrapeModeStaticBtn.classList.add('hover:bg-gray-700');
-                dynamicScraperOptions.classList.remove('hidden');
-                dynamicScraperOptions.classList.add('flex');
+                cssSelectorAccordion.classList.remove('hidden');
                 saveScrapedDataBtn.textContent = 'Save as JSON';
             }
              // Clear output when switching modes
@@ -1793,10 +1792,19 @@ ${fileContent}
         scrapeModeStaticBtn.addEventListener('click', () => setScrapeMode('static'));
         scrapeModeDynamicBtn.addEventListener('click', () => setScrapeMode('dynamic'));
 
+        const accordionHeader = document.getElementById('accordion-header');
+        const accordionContent = document.getElementById('accordion-content');
+        const accordionArrow = document.getElementById('accordion-arrow');
+
+        accordionHeader.addEventListener('click', () => {
+            accordionContent.classList.toggle('hidden');
+            accordionArrow.classList.toggle('rotate-180');
+        });
+
         function renderExtractors() {
             extractorList.innerHTML = '';
             if (extractors.length === 0) {
-                extractorList.innerHTML = '<p class="text-xs text-gray-500 text-center">No extractors defined.</p>';
+                extractorList.innerHTML = '<p class="text-xs text-gray-500 text-center">No selectors defined.</p>';
                 return;
             }
             extractors.forEach((extractor, index) => {
@@ -1877,7 +1885,7 @@ ${fileContent}
             monaco.editor.setModelLanguage(scraperEditor.getModel(), 'json');
 
             if (extractors.length === 0) {
-                scraperEditor.setValue(JSON.stringify({ error: "Please define at least one data extractor for dynamic scraping." }, null, 2));
+                scraperEditor.setValue(JSON.stringify({ error: "Please define at least one CSS selector for dynamic scraping." }, null, 2));
                 return;
             }
 
