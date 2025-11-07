@@ -178,7 +178,22 @@
         <div id="main-content" class="flex-grow overflow-hidden">
             <!-- Web Emulator View -->
             <main id="emulator-view" class="flex-grow flex flex-col overflow-hidden h-full">
-                <div id="render-panel" class="w-full flex-grow flex flex-col bg-gray-900 overflow-auto">
+                <div id="render-panel" class="w-full flex-grow flex flex-col bg-gray-900 overflow-auto relative">
+                    <div id="emulator-error-overlay" class="hidden absolute inset-0 bg-black bg-opacity-80 z-20 flex items-center justify-center p-4">
+                        <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full border border-red-500">
+                            <div class="flex justify-between items-center mb-4">
+                                <h3 class="text-xl font-bold text-red-400">Emulation Error</h3>
+                                <button id="close-error-overlay-btn" class="text-gray-400 hover:text-white text-3xl font-bold">&times;</button>
+                            </div>
+                            <pre id="error-overlay-content" class="code-font text-sm text-red-300 whitespace-pre-wrap overflow-auto max-h-96"></pre>
+                        </div>
+                    </div>
+                    <div id="react-warning" class="hidden p-3 border-b border-yellow-600 bg-yellow-900 text-yellow-200 text-sm flex justify-between items-center">
+                        <div>
+                            <strong class="font-semibold">Experimental Feature:</strong> The React emulator is for basic projects only and does not support build tools or modern ES module syntax.
+                        </div>
+                        <button id="close-react-warning-btn" class="text-yellow-200 hover:text-white text-2xl font-bold">&times;</button>
+                    </div>
                     <div id="instructions" class="flex flex-col items-center p-8 text-center">
                         <h2 class="text-3xl font-bold mb-4 text-gray-100">Web Application Emulator</h2>
                         <p class="text-gray-400 max-w-xl mb-8">Preview your multi-file React or Static HTML projects by selecting a project folder.</p>
@@ -273,6 +288,9 @@
                             <button id="scrape-mode-static" class="flex-1 text-center text-sm py-1 rounded-md transition-colors bg-blue-600 text-white">Static</button>
                             <button id="scrape-mode-dynamic" class="flex-1 text-center text-sm py-1 rounded-md transition-colors hover:bg-gray-700">Dynamic</button>
                         </div>
+                        <p id="scraper-mode-description" class="text-xs text-gray-500 mt-2 p-2 bg-gray-900 rounded-md">
+                            **Static Mode:** Best for simple HTML pages. Extracts the full page content as Markdown.
+                        </p>
                     </div>
 
                     <!-- URL Input -->
