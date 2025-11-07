@@ -2,6 +2,8 @@
         const emulatorTabBtn = document.getElementById('emulator-tab-btn');
         const coderTabBtn = document.getElementById('coder-tab-btn');
         const sourceControlTabBtn = document.getElementById('source-control-tab-btn');
+import { resolvePath, findFile, detectProjectType, findEntryPoint } from './utils.js';
+
         const scraperTabBtn = document.getElementById('scraper-tab-btn');
         const emulatorView = document.getElementById('emulator-view');
         const coderView = document.getElementById('coder-view');
@@ -294,11 +296,6 @@
             }
         }
 
-        function detectProjectType(files) {
-            const filePaths = Array.from(files.keys());
-            if (filePaths.some(p => p.endsWith('.jsx')) || findEntryPoint(files)) return 'react';
-            return 'static';
-        }
 
         async function emulateStaticSite(files) {
             log('Starting static site emulation...');
@@ -393,7 +390,6 @@
             log('React app emulation finished.', 'success');
         }
 
-        const findEntryPoint = (files) => findFile(files, ['src/index.js', 'src/index.jsx', 'index.js', 'index.jsx']);
 
         const executeModule = async (path, files, visited = new Set()) => {
             const normalizedPath = path.replace(/\\/g, '/');
@@ -447,19 +443,7 @@
             return module.exports;
         };
 
-        const resolvePath = (base, relative) => {
-            const stack = base.split('/').filter(i => i && i !== '.');
-            stack.pop();
-            relative.split('/').forEach(part => {
-                if (part === '..') stack.pop(); else if (part && part !== '.') stack.push(part);
-            });
-            return stack.join('/');
-        };
 
-        const findFile = (files, possibilities) => {
-            for (const p of possibilities) if (files.has(p)) return p;
-            return undefined;
-        };
 
         function downloadFile(filePath) {
             const file = fileMap.get(filePath);
