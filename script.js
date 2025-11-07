@@ -278,7 +278,29 @@ import { resolvePath, findFile, detectProjectType, findEntryPoint } from './util
             await refreshEmulator();
         }
 
+        const errorOverlay = document.getElementById('emulator-error-overlay');
+        const errorOverlayContent = document.getElementById('error-overlay-content');
+        const closeErrorOverlayBtn = document.getElementById('close-error-overlay-btn');
+
+        function showErrorOverlay(error) {
+            const sanitizedMessage = error.stack.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            errorOverlayContent.innerHTML = sanitizedMessage;
+            errorOverlay.classList.remove('hidden');
+        }
+
+        closeErrorOverlayBtn.addEventListener('click', () => {
+            errorOverlay.classList.add('hidden');
+        });
+
         async function refreshEmulator() {
+            errorOverlay.classList.add('hidden');
+            // Show the React warning if it's a react project and it hasn't been dismissed
+            if (currentProjectType === 'react' && !sessionStorage.getItem('reactWarningDismissed')) {
+                document.getElementById('react-warning').classList.remove('hidden');
+            } else {
+                document.getElementById('react-warning').classList.add('hidden');
+            }
+
             loadingState.style.display = 'flex';
             appRoot.style.display = 'none';
             staticSiteFrame.style.display = 'none';
@@ -287,10 +309,14 @@ import { resolvePath, findFile, detectProjectType, findEntryPoint } from './util
             document.head.querySelectorAll('style[data-dynamic-style]').forEach(s => s.remove());
             log('Refreshing emulator...');
             try {
-                if (currentProjectType === 'react') await emulateReactApp(fileMap);
-                else await emulateStaticSite(fileMap);
+                if (currentProjectType === 'react') {
+                    await emulateReactApp(fileMap);
+                } else {
+                    await emulateStaticSite(fileMap);
+                }
             } catch (e) {
                 log(`A critical error occurred during refresh: ${e.message}`, 'error', e);
+                showErrorOverlay(e);
             } finally {
                  loadingState.style.display = 'none';
             }
@@ -1747,6 +1773,7 @@ ${fileContent}
         const addExtractorForm = document.getElementById('add-extractor-form');
         const extractorNameInput = document.getElementById('extractor-name-input');
         const extractorSelectorInput = document.getElementById('extractor-selector-input');
+        const scraperModeDescription = document.getElementById('scraper-mode-description');
 
         let scraperEditor = null;
         let currentScrapeMode = 'static';
@@ -1761,6 +1788,7 @@ ${fileContent}
                 scrapeModeDynamicBtn.classList.add('hover:bg-gray-700');
                 cssSelectorAccordion.classList.add('hidden');
                 saveScrapedDataBtn.textContent = 'Save as Markdown';
+                scraperModeDescription.innerHTML = '**Static Mode:** Best for simple HTML pages. Extracts the full page content as Markdown.';
             } else {
                 scrapeModeDynamicBtn.classList.add('bg-blue-600', 'text-white');
                 scrapeModeDynamicBtn.classList.remove('hover:bg-gray-700');
@@ -1768,6 +1796,7 @@ ${fileContent}
                 scrapeModeStaticBtn.classList.add('hover:bg-gray-700');
                 cssSelectorAccordion.classList.remove('hidden');
                 saveScrapedDataBtn.textContent = 'Save as JSON';
+                scraperModeDescription.innerHTML = '**Dynamic Mode:** For JS-heavy sites. Extracts specific data using CSS selectors. Requires a separate Chrome instance.';
             }
              // Clear output when switching modes
             if (scraperEditor) scraperEditor.setValue('');
@@ -2062,6 +2091,11 @@ ${fileContent}
         }
 
         async function main() {
+            document.getElementById('close-react-warning-btn').addEventListener('click', () => {
+                document.getElementById('react-warning').classList.add('hidden');
+                sessionStorage.setItem('reactWarningDismissed', 'true');
+            });
+
             try {
                 log('Initializing virtual file system...');
                 fs = new LightningFS('fs');
