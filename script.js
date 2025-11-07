@@ -25,6 +25,7 @@ import { resolvePath, findFile, detectProjectType, findEntryPoint } from './util
         }
 
         function switchToEmulator() {
+            console.log("switchToEmulator called");
             emulatorTabBtn.classList.add('active');
             coderTabBtn.classList.remove('active');
             sourceControlTabBtn.classList.remove('active');
@@ -37,6 +38,7 @@ import { resolvePath, findFile, detectProjectType, findEntryPoint } from './util
             coderControls.classList.add('hidden');
         }
         function switchToCoder() {
+            console.log("switchToCoder called");
             coderTabBtn.classList.add('active');
             emulatorTabBtn.classList.remove('active');
             sourceControlTabBtn.classList.remove('active');
@@ -49,6 +51,7 @@ import { resolvePath, findFile, detectProjectType, findEntryPoint } from './util
             emulatorControls.classList.add('hidden'); emulatorControls.classList.remove('flex');
         }
         function switchToSourceControl() {
+            console.log("switchToSourceControl called");
             sourceControlTabBtn.classList.add('active');
             emulatorTabBtn.classList.remove('active');
             coderTabBtn.classList.remove('active');
@@ -60,8 +63,10 @@ import { resolvePath, findFile, detectProjectType, findEntryPoint } from './util
             // Hide both sets of controls for this tab
             emulatorControls.classList.add('hidden'); emulatorControls.classList.remove('flex');
             coderControls.classList.add('hidden'); coderControls.classList.remove('flex');
+            scraperView.classList.add('hidden');
         }
         function switchToScraper() {
+            console.log("switchToScraper called");
             scraperTabBtn.classList.add('active');
             emulatorTabBtn.classList.remove('active');
             coderTabBtn.classList.remove('active');
